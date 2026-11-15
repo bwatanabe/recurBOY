@@ -1,4 +1,5 @@
 #include "ofApp.h"
+#include <cstdlib>
 
 //--------------------------------------------------------------
 void ofApp::setup(){
@@ -7,6 +8,8 @@ void ofApp::setup(){
     ofSetVerticalSync(false);
     ofHideCursor();
     setting.loadJson();
+    const char* wasMode = std::getenv("WAS_HEADLESS");
+    wasHeadless = wasMode && string(wasMode) == "1";
     ofSetFrameRate(setting.framerate);
     readVideoMode();
 
@@ -25,11 +28,23 @@ void ofApp::setup(){
     
 
     userInput.setupThis("actionMap.json");
-    userInput.analogListening();
-    userInput.midiListening(true);
-    userInput.adcDelay = setting.adcSecDelay;
-    userInput.adcGrain = setting.adcGrain;
-    userInput.connectKeyboard(0);
+    if(wasHeadless){
+        // No MCP3008/ADC or shield is attached. Incur defaults to analog
+        // listening on Raspberry Pi, so explicitly disable it.
+        userInput.isAnalogListening = false;
+        const char* oscPortEnv = std::getenv("WAS_OSC_PORT");
+        int oscPort = oscPortEnv ? std::atoi(oscPortEnv) : 8000;
+        if(oscPort <= 0 || oscPort > 65535) oscPort = 8000;
+        wasOsc.setup(oscPort);
+        ofLogNotice() << "WAS headless mode: OSC listening on UDP " << oscPort;
+    }
+    else{
+        userInput.analogListening();
+        userInput.midiListening(true);
+        userInput.adcDelay = setting.adcSecDelay;
+        userInput.adcGrain = setting.adcGrain;
+        userInput.connectKeyboard(0);
+    }
 
     sender.setup("localhost", 9000);
 
@@ -78,6 +93,34 @@ void ofApp::setup(){
     shaderPlayer.setup();
     fxPlayer.setup();
 
+    if(wasHeadless){
+        // Automatically run external USB capture; do not require menu input.
+        // The capture class currently requests 640x480 internally.
+        const char* captureIdEnv = std::getenv("WAS_CAPTURE_ID");
+        int captureId = captureIdEnv ? std::atoi(captureIdEnv) : 2;
+        if(captureId < 0) captureId = 2;
+        runningSource = "EXTERNAL";
+        currentPage = "EXTERNAL";
+        externalPage.isPlaying = true;
+        videoInput.setup("vidGrabber", ofGetWidth(), ofGetHeight(), 25, captureId);
+        ofLogNotice() << "WAS headless capture started with device index " << captureId;
+
+        const char* fxEnv = std::getenv("WAS_FX_SHADER");
+        if(fxEnv && fxEnv[0] != '\0'){
+            if(!loadWasEffect(fxEnv)){
+                ofLogWarning() << "WAS shader not found: " << fxEnv << " (raw input still shown)";
+            }
+        }
+        else{
+            // Reuse the first top-level effect on the installed recurBOY image.
+            for(const auto& item : effectPage.menuList){
+                if(!item.empty() && item.back() != '|'){
+                    if(loadWasEffect(ofFilePath::getFileName(item))) break;
+                }
+            }
+        }
+    }
+
     safeShutdownCount = 0;
     safeShutdownLastTime = ofGetElapsedTimef();   
 
@@ -85,7 +128,8 @@ void ofApp::setup(){
 
 //--------------------------------------------------------------
 void ofApp::update(){
-    readActions();
+    if(wasHeadless) readWasOsc();
+    else readActions();
 
     if(runningSource == "VIDEO" && videoPage.isPlaying && !isSampleImage){
         recurPlayer.update();
@@ -251,6 +295,48 @@ void ofApp::runAction(string action, string amount){
 
 
  }
+
+// WAS OSC commands are separate from the original incur input mapper so that
+// hardware-free operation never polls GPIO or the absent MCP3008 chip.
+bool ofApp::loadWasEffect(const string& requestedName){
+    effectPage.menuList = getPathsForMenu(effectPage);
+    for(const auto& item : effectPage.menuList){
+        if(item.empty() || item.back() == '|') continue;
+        if(ofFilePath::getFileName(item) == requestedName ||
+           ofFilePath::getBaseName(item) == requestedName){
+            fxPlayer.loadShaderFiles("default.vert", item);
+            effectPage.isPlaying = true;
+            ofLogNotice() << "WAS loaded effect " << item;
+            return true;
+        }
+    }
+    ofLogWarning() << "WAS effect not found in top-level EFFECT/Fx folders: " << requestedName;
+    return false;
+}
+
+void ofApp::readWasOsc(){
+    while(wasOsc.hasWaitingMessages()){
+        ofxOscMessage msg;
+        wasOsc.getNextMessage(msg);
+        if(msg.getNumArgs() < 1) continue;
+        const string address = msg.getAddress();
+        try{
+            if(address == "/was/video/fx/load"){
+                loadWasEffect(msg.getArgAsString(0));
+            }
+            else if(address == "/was/video/fx/enabled"){
+                effectPage.isPlaying = (msg.getArgAsInt32(0) != 0);
+            }
+            else if(address == "/was/video/fx/param/0") setEffectParam0(msg.getArgAsFloat(0));
+            else if(address == "/was/video/fx/param/1") setEffectParam1(msg.getArgAsFloat(0));
+            else if(address == "/was/video/fx/param/2") setEffectParam2(msg.getArgAsFloat(0));
+            else if(address == "/was/video/fx/speed") setEffectSpeed(msg.getArgAsFloat(0));
+        }
+        catch(const std::exception& error){
+            ofLogWarning() << "WAS bad OSC argument for " << address << ": " << error.what();
+        }
+    }
+}
 
 void ofApp::exit(){
     userInput.exit();
