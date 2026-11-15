@@ -113,11 +113,16 @@ void ofApp::setup(){
         }
         else{
             // Reuse the first top-level effect on the installed recurBOY image.
+            // Do not mutate effectPage.menuList while iterating over it.
+            string firstEffect;
             for(const auto& item : effectPage.menuList){
                 if(!item.empty() && item.back() != '|'){
-                    if(loadWasEffect(ofFilePath::getFileName(item))) break;
+                    firstEffect = ofFilePath::getFileName(item);
+                    break;
                 }
             }
+            if(!firstEffect.empty()) loadWasEffect(firstEffect);
+            else ofLogWarning() << "WAS: no top-level FX shader found; showing unprocessed capture";
         }
     }
 
