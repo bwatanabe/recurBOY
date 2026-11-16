@@ -713,6 +713,70 @@ Preferred next decisive A/B hardware check:
    USB protocol error -71, so still consider a short known-good OTG
    adapter or powered USB hub after confirming source behavior.
 
+## Controlled direct-USB vs powered-hub comparison (2026-11-16)
+
+The user confirmed the **same MiraBox works on a Mac as a USB capture
+device** when powered through the Mac, and HDMI passthrough from the
+iPad through MiraBox to a monitor works while MiraBox is connected to
+the Pi. HDMI passthrough is not evidence USB capture works on the Pi;
+the direct Pi FFmpeg MJPEG stream has broken JPEG markers and captured
+a nearly uniform dark-gray frame. The hardware is likely functional
+but the Pi USB capture path remains suspect.
+
+A known Raspberry Pi Zero 2 W `dwc2` reconnect issue (different
+kernel, not proof of this exact case) is documented at:
+https://github.com/raspberrypi/linux/issues/6247
+
+Next decisive experiment: on the same unprotected iPad home/Photos
+signal, compare video capture **direct over the Pi OTG adapter** with
+capture **via an externally powered USB 2.0-compatible hub**.
+Keep the Pi powered via PWR IN and do not backfeed uncontrolled
+external +5V through the OTG cable. Do not reinstall/recompile
+recurBOY between A/B tests. Stop `ofRecurBoy` first.
+
+For either test, with the correct MiraBox current `/dev/videoN`:
+```sh
+# Set LABEL=direct, then repeat later with LABEL=hub.
+LABEL=direct
+ffmpeg -hide_banner -loglevel warning \
+  -f v4l2 -input_format mjpeg -video_size 640x480 -framerate 30 \
+  -i /dev/video0 -t 5 -vf fps=1 -y \
+  "/home/pi/was_${LABEL}_%02d.png" \
+  2> "/home/pi/was_${LABEL}.log"
+echo "FFmpeg exit: $?"
+grep -Eic 'overread|EOI missing|No JPEG data|Invalid data' \
+  "/home/pi/was_${LABEL}.log"
+dmesg | tail -n 25
+```
+
+Use existing Python Pillow to print each PNG's RGB brightness
+and standard deviation; for a bright and changing iPad home screen,
+mean 15,15,15 and stddev near 0 means the Pi still sees an almost
+solid gray image:
+
+```sh
+python3 - <<'PY'
+from PIL import Image, ImageStat
+from glob import glob
+for filename in sorted(glob('/home/pi/was_direct_*.png')+
+                       glob('/home/pi/was_hub_*.png')):
+    s=ImageStat.Stat(Image.open(filename).convert('RGB'))
+    print(filename, 'mean', [round(x,1) for x in s.mean],
+          'stddev', [round(x,1) for x in s.stddev])
+PY
+```
+
+Interpretation:
+- Powered hub yields colorful images and removes errors: USB
+  power/signal/host link; retain powered hub for exhibit.
+- Both black/garbled with recurrent USB errors: try other OTG cable,
+  host controller compatibility and different UVC capture adapter.
+- Independent Pi FFmpeg JPEG *clean* and colorful but WAS renderer
+  black: resume C++/GStreamer debugging (RGB conversion,
+  `ofGstVideoGrabber`, default ANSIlike shader parameters).
+- Powered hub does not guarantee that source negotiation or driver
+  quirks are fixed; inspect frame content and dmesg, not only FPS.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
