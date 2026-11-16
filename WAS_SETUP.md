@@ -1,6 +1,8 @@
-# WAS recurBOY — headless video-processor experiment (v0.1)
+# WAS recurBOY — shared video-effects processor (v0.2)
 
-> **Status: source change prepared; NOT compiled or tested on Raspberry Pi hardware.**
+> **Status (Nov 16, 2026): Pi Zero 2 W build and first end-to-end HDMI test succeeded.** Live HDMI-in from a MiraBox through an **externally powered USB hub**, GLSL color-negative processing, OLED status, button-1 bypass, and OSC FX parameters have been tested on device. The v0.2 default FX settings, quieter logging, diagnostics cleanup, and experimental encoder code are **committed but still need on-device rebuild and verification**.
+
+> **Architectural role: this is not a WAS cartridge.** It is a permanent shared output-stage processor. Any WAS cartridge (PS-2600, Naninovel, emulator, etc.) can feed its HDMI content through this unit; the processor applies global effects irrespective of the selected cartridge.
 >
 > **Start here on a fresh SD card:** [WAS_FIRST_BOOT.md](WAS_FIRST_BOOT.md)
 > follows the official v3.1.0 image installation, SSH setup, safe source deployment,
@@ -14,10 +16,13 @@ Use a **Raspberry Pi Zero 2 W** as an optional outboard video processor in the
 Watanabe Autotainment System (WAS):
 
 ```text
-WAS playback host HDMI -> Linux-compatible UVC HDMI-to-USB capture adapter
-                       -> Pi Zero 2 W USB OTG
-                       -> recurBOY FX/GLSL processor
-                       -> Pi mini-HDMI -> monitor/projector
+Active WAS cartridge video HDMI -> MiraBox UVC HDMI capture
+                                  -> externally powered USB hub
+                                  -> Pi Zero 2 W USB OTG
+                                  -> recurBOY FX/GLSL processor
+                                  -> Pi mini-HDMI -> monitor/projector
+
+WAS orchestration / AI output / local buttons -> OSC control of FX processor
 ```
 
 No custom recurBOY shield, ADC, extra MIDI controller, or TFT display is required.
@@ -46,10 +51,12 @@ the core video processor does not require that daemon or any GPIO hardware.
    **Compatibility of a specific image with Pi Zero 2 W is unverified here.**
 3. Confirm HDMI output works before adding capture hardware or modifying code.
 4. Confirm USB capture is enumerated and gives a valid `ofVideoGrabber` index.
-   Many drivers expose additional virtual camera devices; **do not assume
-   the original recurBOY camera index 2 is correct**.
-5. Arrange a USB OTG adapter or powered hub as needed; keep the power supply
-   appropriate for the Pi and capture dongle.
+   Many drivers expose additional virtual camera devices; the tested MiraBox
+   uses openFrameworks index **2**, but confirm after USB re-enumeration.
+5. The **powered USB hub is required for the currently verified configuration**:
+   direct MiraBox-to-Pi USB produced -71 protocol errors, black frames and
+   malformed MJPEG, but the powered hub enabled live HDMI output.
+   Keep the Pi separately powered through PWR IN.
 
 ### Installing this source branch
 
@@ -71,13 +78,13 @@ From inside the Pi's `ofRecurBoy` application directory:
 
 ```sh
 # Example when the UVC capture device is index 0:
-WAS_CAPTURE_ID=0 WAS_FX_SHADER=wobble.frag sh startWASHeadless
+WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 WAS_FX_SHADER=invert.frag sh startWASHeadless
 ```
 
 Or, to choose the first top-level effect file found:
 
 ```sh
-WAS_CAPTURE_ID=0 sh startWASHeadless
+WAS_CAPTURE_ID=2 sh startWASHeadless
 ```
 
 Environment variables:
@@ -90,10 +97,37 @@ Environment variables:
 | `WAS_DIAGNOSTICS` | `0` | `1` launches OLED/buttons and local status telemetry |
 | `WAS_FX_SHADER` | empty | Effect name, file name, or first installed top-level effect |
 | `WAS_APP_DIR` | `/home/pi/openframeworks10.1/apps/myApps/ofRecurBoy` | Launch-script app directory |
+| `WAS_ENCODER` | `0` | Set `1` to enable experimental rotary encoder and press switch on GPIO22/23/4 |
 
-**Only launch this script after building and verifying that the forked C++
-application and its addons are actually installed.** We haven't executed
-the build on Raspberry Pi hardware in this development pass.
+**Only launch this script after building the installed forked C++
+application and its addons.** The initial v0.1 build succeeded on the
+Pi Zero 2 W; v0.2 must be reinstalled and recompiled.
+
+The OLED/physical controller is *optional*: `WAS_DIAGNOSTICS=1` starts
+it and should turn off the OLED on orderly shutdown. The launcher
+does not automatically run at boot yet; automatic startup and WAS
+lifecycle control are later deployment steps.
+
+For a safe v0.2 refresh of the tested installation (stop the running
+video process first with Ctrl+C):
+
+```sh
+cd /home/pi/recurBOY-was
+git status --short
+git pull --ff-only
+sh software/ofRecurBoy/installWASIntoImage.sh
+cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+make -j1 > /home/pi/was_build_v02.log 2>&1
+echo "Build exit: $?"
+tail -n 20 /home/pi/was_build_v02.log
+# Only start when build exit is 0:
+WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 WAS_FX_SHADER=invert.frag sh startWASHeadless
+```
+
+**Do not perform `git reset --hard`** to resolve a non-fast-forward or
+local changes; review them instead. `installWASIntoImage.sh` retains
+timestamped source backups and now also installs `main.cpp`.
+No boot services or crontab entries are changed by this procedure.
 
 ## OSC API (initial)
 
@@ -148,7 +182,12 @@ internal pull-ups.
 
 The former PCM5102 I2S DAC on GPIO18/BCLK (pin 12),
 GPIO19/LRCLK (pin 35), GPIO21/DIN (pin 40) is not used by this
-video-only prototype. The encoder is **not** initialized or monitored.
+video-only prototype. By default the encoder is **not** initialized or monitored. Set
+`WAS_ENCODER=1` to activate the *experimental* rotary controls on the
+known historical GPIO connections: rotate for selected parameter
+adjustment in steps of 0.05; press encoder switch to cycle between
+parameters 0–2. The historical encoder sometimes behaved unreliably,
+so test manually before relying on it in exhibition use.
 
 ### OLED/button diagnostic controller
 
@@ -158,12 +197,19 @@ custom shield**.
 
 - Button 1 (BCM17): toggle FX bypass/enable.
 - Button 2 (BCM27): load the next installed top-level shader.
-- OLED: video engine online/offline, UVC grabber readiness, current shader,
-  bypass state and reported frame rate.
+- Optional encoder (BCM22/23): step selected effect parameter by 0.05.
+- Optional encoder push switch (BCM4): cycle selected parameter 0–2.
+- OLED: video engine online/offline, UVC link state (not actual HDMI
+  frame health), current shader, bypass state, selected parameter and
+  its value, and **renderer** FPS.
 - Diagnostic status is sent by the engine over localhost UDP `9010`;
   buttons command the engine over localhost UDP `WAS_OSC_PORT` (default `8000`).
-- UVC readiness indicates that the capture object reports ready; it
-  **does not certify a live HDMI signal**.
+- UVC link indicates that the capture object reports ready; it
+  **does not certify a live HDMI signal or fresh frame arrivals**.
+- The OLED's selected-parameter indicator will always show parameter 0
+  while the optional encoder is disabled; OSC can still set parameters
+  0, 1 and 2. A later telemetry revision can track last OSC-selected
+  parameter.
 - Both buttons are debounced in software (65 ms) and read using internal pull-ups.
 
 The original recurBOY TFT/display.py process is **not** used. The existing
@@ -190,11 +236,24 @@ python3 was_diagnostics.py
 For the integrated prototype:
 
 ```sh
-WAS_DIAGNOSTICS=1 WAS_CAPTURE_ID=0 sh startWASHeadless
+WAS_DIAGNOSTICS=1 WAS_CAPTURE_ID=2 sh startWASHeadless
 ```
 
 If the OLED or a button is broken, simply omit `WAS_DIAGNOSTICS=1`;
 the video processor starts without physical controls.
+
+Once v0.2 runs reliably without encoder input, optionally test the
+physical encoder (stop the app first, then relaunch):
+
+```sh
+WAS_ENCODER=1 WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 \
+  WAS_FX_SHADER=invert.frag sh startWASHeadless
+```
+
+Try rotating the encoder to change the selected `P0` value while
+FX is enabled. Press the encoder to select `P1` or `P2`. Rotation
+direction or sensitivity may need calibration for the particular
+salvaged encoder.
 
 **Do not let stock recurBOY's ADC/GPIO listener initialize alongside the
 diagnostics process**: it configures unrelated shield pins, including
@@ -232,4 +291,10 @@ state; this is a future option, not part of v0.1.
   adapter already consumes the Pi's USB OTG connector.
 - Launching `make run` per boot is intended for prototyping, not production.
   A reliable built binary and boot service should be developed once verified.
+- Internal GStreamer verbose bus messages are now hidden in WAS mode
+  through a notice-level log threshold; warnings and errors remain visible.
+- Loading a shader initializes 0.5 for its first 3 parameters,
+  except `invert.frag`, which starts at 1.0 for a visible negative.
+  Those defaults are preliminary and can be replaced by per-shader
+  presets or autonomous WAS modulation.
 - GPLv3 obligations apply to distributions of this fork and its code.
