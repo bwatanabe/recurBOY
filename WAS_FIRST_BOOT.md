@@ -3,7 +3,9 @@
 **Target:** Fresh microSD, Pi Zero 2 W, mini-HDMI monitor, built-in Wi-Fi,
 salvaged SSD1306 I²C OLED and two arcade buttons. No recurBOY shield.
 
-**Current status:** Prepared deployment instructions; no on-device tests yet.
+**Current status:** The official v3.1.0 image **has booted successfully**
+on the salvaged Pi Zero 2 W, with SSH/Wi-Fi functioning. The modified C++
+application still needs compiling and testing.
 See [WAS_SETUP.md](WAS_SETUP.md) for the shader/video/OSC architecture.
 
 ## 1. Flash the official image
@@ -108,6 +110,68 @@ commands above.
 the modified C++ app. If the screen is black or Wi-Fi is missing, debug this
 stock-image boot stage before attempting the WAS modifications.
 
+## Verified stock-image probe (2026-11-16)
+
+The first on-device `was_probe.sh` report confirms:
+
+| Item | Measured result |
+|---|---|
+| Hardware | Raspberry Pi Zero 2 Rev 1.0 |
+| Kernel | `5.4.81-v7+`, ARMv7 |
+| OS | Raspbian GNU/Linux 9 Stretch |
+| Power/throttling | `throttled=0x0` |
+| Storage | 29 GB root, 25 GB free |
+| App directory | `/home/pi/openframeworks10.1/apps/myApps/ofRecurBoy` |
+| Effects folder | `/home/pi/EFFECT`, 32 top-level files |
+| Generative patterns | `/home/pi/PATTERN`, 30 top-level files |
+| I²C | `/dev/i2c-1` not yet available |
+| Video nodes | Internal bcm2835 codec/ISP only; external UVC not connected |
+| Auto-start | `@reboot /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy/startRecurBoy` |
+
+These assets **are already present**; do not reinstall openFrameworks or
+replace the working OS with a modern image. Stretch is end-of-life, so
+keep the device on a trusted private network, avoid exposing services
+to the internet, and do not run a broad distribution upgrade while
+we rely on the legacy video stack.
+
+### Next command sequence on this verified image
+
+1. Disable the known stock cron job so it cannot relaunch the TFT/shield
+   UI. Run `crontab -e` and comment the exact `@reboot ...startRecurBoy`
+   line with `#`. Save, then verify `crontab -l`.
+2. Inspect running processes with
+   `ps -eo pid,comm,args | grep -E '[o]fRecurBoy|[d]isplay.py'`.
+   Stop the old `ofRecurBoy` application with
+   `sudo killall ofRecurBoy 2>/dev/null || true`.
+   If `display.py` remains active, stop its specific PID using `kill PID`.
+   **Do not `killall python3`**, which can terminate unrelated services.
+3. Refresh the cloned branch and deploy the WAS source:
+
+```sh
+cd /home/pi/recurBOY-was
+git pull --ff-only
+sh software/ofRecurBoy/installWASIntoImage.sh
+
+cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+make -j1 > /home/pi/was_build.log 2>&1
+echo "Build exit code: $?"
+tail -n 60 /home/pi/was_build.log
+```
+
+If the build fails, the most useful debugging evidence is the **first**
+actual C++ error in `/home/pi/was_build.log` and the last 60 lines.
+Because the Zero 2 W has limited RAM, use `-j1`.
+
+4. Once compilation succeeds, enable I²C in `sudo raspi-config`
+   (Interfacing Options → I²C → Enable on this older OS). Reboot if
+   prompted. Confirm `/dev/i2c-1` appears, and if available run
+   `i2cdetect -y 1` to look for address `3c`. Then run the independent
+   OLED diagnostic using `python3 was_diagnostics.py`.
+
+The first integrated video test comes **after** successful compilation
+and OLED verification. Do not connect a capture adapter during the
+initial compiler test.
+
 ## 4. Disable the stock recurBOY UI before using WAS
 
 After identifying the active stock startup entry, disable its automatic
@@ -190,10 +254,10 @@ disconnection, FX performance, and HDMI stability first.
 
 ## Staged checklist
 
-- [ ] Official image successfully flashed
-- [ ] Pi Zero 2 W starts and is reachable via SSH
+- [x] Official image successfully flashed
+- [x] Pi Zero 2 W starts and is reachable via SSH
 - [ ] Initial login password changed
-- [ ] Stock app path, OS version, effects folders established
+- [x] Stock app path, OS version, effects folders established
 - [ ] Stock auto-start safely disabled
 - [ ] WAS source installed, original C++ source backed up
 - [ ] `make -j1` succeeds
