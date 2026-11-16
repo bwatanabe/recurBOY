@@ -1,6 +1,10 @@
 # WAS recurBOY — headless video-processor experiment (v0.1)
 
 > **Status: source change prepared; NOT compiled or tested on Raspberry Pi hardware.**
+>
+> **Start here on a fresh SD card:** [WAS_FIRST_BOOT.md](WAS_FIRST_BOOT.md)
+> follows the official v3.1.0 image installation, SSH setup, safe source deployment,
+> and first hardware diagnostics.
 > This is a development branch intended to preserve the original recurBOY implementation.
 > Do not replace your working SquishBox microSD card without imaging/backing it up.
 
