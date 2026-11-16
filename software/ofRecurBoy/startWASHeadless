@@ -16,7 +16,16 @@ export WAS_DIAGNOSTICS="${WAS_DIAGNOSTICS:-0}"
 if [ "$WAS_DIAGNOSTICS" = "1" ]; then
     python3 ./was_diagnostics.py --control-port "$WAS_OSC_PORT" &
     diagnostics_pid=$!
-    trap 'kill "$diagnostics_pid" 2>/dev/null || true' EXIT
+    # On Ctrl+C / termination, always tell Python to exit gracefully.
+    # The diagnostic handler turns off the OLED and releases GPIO pins.
+    cleanup() {
+        trap - EXIT INT TERM
+        kill "$diagnostics_pid" 2>/dev/null || true
+        wait "$diagnostics_pid" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     make run
 else
     exec make run
