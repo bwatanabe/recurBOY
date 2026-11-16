@@ -410,6 +410,47 @@ If V4L2 fails, inspect `dmesg | tail -n 50` for UVC resets,
 bandwidth warnings, and capture timeouts and check the capture dongle's
 power via powered USB hub if appropriate.
 
+## Confirmed USB reconnect loop (2026-11-16)
+
+When the WAS renderer was stopped, the Pi reported the MiraBox moved
+from `/dev/video0`+`/dev/video1` to `/dev/video1`+`/dev/video2`.
+More importantly, `dmesg` showed repeated **physical USB disconnect
+followed by re-enumeration** at ~1–2 second intervals, with device
+numbers 28–33 and the stable USB hardware ID `1bcf:2c99` (VXIS Inc,
+MiraBox Video Capture).
+
+This is currently a **USB bus/peripheral stability problem**, not
+evidence of a shader defect. Linux node numbers can change after
+each reconnect; stop capture debugging until the USB device remains
+present without disconnect/re-enumeration.
+
+Suggested safe isolation order:
+
+1. Stop all video processes. Keep SSH connected by Wi-Fi. Run
+   `vcgencmd get_throttled`, `lsusb`, `dmesg -w`.
+2. Try the MiraBox with no HDMI input. Check whether the repeated
+   disconnects still occur with an idle capture card.
+3. Check USB power-management setting (when device is present):
+   `cat /sys/bus/usb/devices/1-1/power/control`. If it reports
+   `auto`, test temporary autosuspend disable using
+   `echo on | sudo tee /sys/bus/usb/devices/1-1/power/control`.
+   The change is not persistent; re-enumeration may reset it.
+4. Replace the USB OTG adapter with a known-good short adapter and
+   power Pi through a stable supply; use an externally powered USB
+   hub between Pi OTG and capture card if available. Do not
+   parallel-feed unmanaged supplies into the same 5V rail.
+5. If necessary, test a low-power USB flash drive using that OTG
+   adapter to distinguish the MiraBox from the Pi/adapter connection.
+
+A similar MiraBox reconnect loop on another Linux host has been
+linked to USB autosuspend (different vendor/product ID;
+not proof for this unit):
+https://www.emadelsaid.com/MiraBox%20capture%20card%20disconnects%20endlessly%20on%20linux/
+
+Do not update the end-of-life Stretch OS or modify `/boot/config.txt`
+just to troubleshoot until basic power, cable, and power-management
+tests are complete.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
