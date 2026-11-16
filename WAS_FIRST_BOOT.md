@@ -618,6 +618,61 @@ upgrading old OS or replacing the official recurBOY image.
 Alternatively capture raw MJPEG bytes with V4L2 and decode with the
 already available Pillow library.
 
+## FFmpeg standalone MJPEG decode test (2026-11-16)
+
+`ffmpeg` was preinstalled at `/usr/bin/ffmpeg` and successfully read
+and processed **90 frames at 640×480 / 30 fps** (~29 fps effective)
+from MiraBox `/dev/video0` using `-f v4l2 -input_format mjpeg`.
+The source codec was detected as `mjpeg, yuvj422p`; this was **not
+90 clean frames**:
+
+```text
+[mjpeg] overread 8
+[mjpeg] EOI missing, emulating
+[mjpeg] Found EOI before any SOF, ignoring
+[mjpeg] No JPEG data found in image
+Error while decoding stream #0:0: Invalid data found when processing input
+frame= 90 fps=29 ... time=00:00:03.10
+```
+
+FFmpeg's native decoder tolerates malformed JPEG frames and continues,
+unlike the legacy recurBOY `libv4l2`/GStreamer path, which previously
+halted with repeated `End Of Image` errors and a buffer allocation error.
+This strongly implicates missing/invalid MJPEG content; the causal
+source remains unresolved (MiraBox JPEG encoder or firmware, USB
+signal/power, or capture HDMI input), particularly given earlier
+`dwc2` USB reset/protocol error `-71`.
+
+Controlled next diagnostics:
+
+1. With WAS stopped and a known-unprotected iPad Home/Photos frame
+   shown, take a standalone **single decoded PNG**:
+
+   ```sh
+   ffmpeg -hide_banner -loglevel warning -f v4l2 \
+     -input_format mjpeg -video_size 640x480 -framerate 30 \
+     -i /dev/video0 -frames:v 1 -y /home/pi/mirabox_probe.png
+   file /home/pi/mirabox_probe.png
+   ```
+
+   Copy to Mac via SCP and visually inspect (a valid PNG container
+   doesn't guarantee visually sound capture). If one frame is corrupt,
+   retest with another HDMI source and/or another host with a powered
+   USB hub.
+2. Collect `v4l2-ctl -d /dev/video0 --list-formats-ext` and check if
+   **native uncompressed** capture (YUYV) is advertised; if yes test
+   that as a separate input format, avoiding MJPEG decoding.
+3. Compare MiraBox with **same source** on a full-size computer.
+   If healthy on Mac but not Pi, focus on Pi USB/OTG/hub/controller;
+   if bad on both, focus on MiraBox/HDMI adapter/HDMI signal.
+4. Test externally powered USB hub and short known-good OTG adapter
+   given prior USB resets; do not assume `vcgencmd get_throttled=0x0`
+   proves the capture card has enough power.
+5. Only after signal quality is proven consider patching OF's
+   GStreamer capture pipeline to explicitly request MJPEG and decode
+   appropriately. Also avoid default ANSIlike shader with zero
+   parameters; debug with bypass or a simpler shader.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
