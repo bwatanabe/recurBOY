@@ -673,6 +673,46 @@ Controlled next diagnostics:
    appropriately. Also avoid default ANSIlike shader with zero
    parameters; debug with bypass or a simpler shader.
 
+## FFmpeg decoded screenshot is near-uniform dark gray; MJPEG only (2026-11-16)
+
+User uploaded `mirabox_probe.png` captured from the MiraBox by FFmpeg.
+The actual **640×480** image was examined with Pillow:
+
+- **307075 / 307200 pixels (99.959%) were exactly RGB (15, 15, 15)**.
+- Only ~72 pixels had any RGB channel above 15, and only four above 192.
+- No recognizable iPad imagery was present.
+
+This means it is **not merely a garbled recognizable picture**:
+the decoded frame is effectively uniform near-black with isolated
+artifacts. Could reflect no valid HDMI signal, HDCP/handshake,
+MiraBox video output when signal is absent, or damaged capture,
+and does **not** alone prove the source or MiraBox is defective.
+
+The command
+`v4l2-ctl -d /dev/video0 --list-formats-ext` reported **only
+`MJPG` / Motion-JPEG (compressed)**, with 640×480 at 30/60 fps
+and higher resolutions; **no native uncompressed YUYV/I420** was
+offered. Do not recommend V4L2 raw uncompressed fallback.
+
+Preferred next decisive A/B hardware check:
+
+1. Disconnect Hulu and display the iPad Home/Settings/Photos image
+   (not protected streaming content). Verify the iPad HDMI adapter
+   can display it directly on an ordinary external monitor/TV.
+2. With the exact same HDMI source, connect the MiraBox **USB output
+   to Mac** instead of the Pi, and preview using QuickTime Player >
+   File > New Movie Recording > select MiraBox as Camera. If Mac sees
+   proper video, focus on Pi USB signal/power/kernel and its legacy
+   UVC/GStreamer code. If Mac also sees blank video, investigate
+   iPad HDMI mode, MiraBox HDMI handshake, and MiraBox device.
+3. If Mac test is blank, use an **unprotected Mac HDMI desktop feed**
+   as the alternative MiraBox HDMI source (or another known-good
+   HDMI source) to separate iPad adapter from MiraBox behavior.
+4. Previously captured MJPEG data triggered FFmpeg
+   `EOI missing` and `overread` messages and the Pi logged dwc2
+   USB protocol error -71, so still consider a short known-good OTG
+   adapter or powered USB hub after confirming source behavior.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
