@@ -365,6 +365,51 @@ index `2`; do not change the C++ code or recompile for this correction.
 We should later add robust capture selection by hardware identifier
 instead of relying on index order.
 
+## First live-video issue: frozen scrambled bypass, black default FX
+
+On the Pi + MiraBox with the correct openFrameworks capture index `2`,
+the video application runs, OLED reports ONLINE/READY and the renderer
+reports approximately 30 FPS. The user observes a **static scrambled**
+output when FX is bypassed and a **black image with FX on**. The bypassed
+image **does not change** when the unprotected iPad Photos source is stopped
+or changed. This implies the renderer is not yet receiving a continuously
+updated video feed; the OLED currently reports GL render FPS and the
+grabber's initialization state, **not incoming frames**.
+
+The initial effect `ANSIlike.frag` contains calculations which divide by
+`fparams[0]` and `fparams[1]`. These begin at zero in upstream
+`conjur::setup()`. Thus a black shader output can be caused by undefined
+shader math independently of the capture problem. Use `invert.frag`
+for further testing rather than debugging ANSIlike and capture together.
+
+### Isolate whether the MiraBox streams on Linux
+
+Stop `startWASHeadless` with Ctrl+C to release `/dev/video0`.
+Display the iPad home screen, a self-recorded video, or another
+**non-HDCP-protected** HDMI source. Then:
+
+```sh
+v4l2-ctl -d /dev/video0 --get-fmt-video
+v4l2-ctl -d /dev/video0 --list-formats-ext
+
+# Probe the V4L2 capture device independently of openFrameworks.
+# Expected: 60 buffers dequeued and exit 0; errors/timeouts mean capture
+# has not been established below the video-engine layer.
+v4l2-ctl -d /dev/video0 --stream-mmap=3 --stream-count=60 --stream-to=/dev/null
+echo "V4L2 exit code: $?"
+```
+
+This test does not save or redistribute captured content; /dev/null
+discards the frames. If successful, use the reported formats to diagnose
+GStreamer negotiation. The existing `captur.cpp` requests 640×480 at
+25 fps and the Pi USB2 bus may favor MJPEG rather than uncompressed YUYV.
+Test the shader independently after confirming capture by launching with
+`WAS_FX_SHADER=invert.frag`.
+
+If V4L2 fails, inspect `dmesg | tail -n 50` for UVC resets,
+bandwidth warnings, and capture timeouts and check the capture dongle's
+power via powered USB hub if appropriate.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
