@@ -37,6 +37,12 @@ void ofApp::setup(){
         if(oscPort <= 0 || oscPort > 65535) oscPort = 8000;
         wasOsc.setup(oscPort);
         ofLogNotice() << "WAS headless mode: OSC listening on UDP " << oscPort;
+        const char* diagEnv = std::getenv("WAS_DIAGNOSTICS");
+        wasDiagnosticsEnabled = diagEnv && string(diagEnv) == "1";
+        if(wasDiagnosticsEnabled){
+            wasDiagnosticsSender.setup("127.0.0.1", 9010);
+            ofLogNotice() << "WAS diagnostics: status on 127.0.0.1:9010";
+        }
     }
     else{
         userInput.analogListening();
@@ -158,6 +164,14 @@ void ofApp::update(){
     }
     if(effectPage.isPlaying){
     fxFbo = fxPlayer.apply({fbo.getTexture(), fxFbo.getTexture()});
+    }
+
+    if(wasHeadless && wasDiagnosticsEnabled){
+        const float now = ofGetElapsedTimef();
+        if(now - wasLastDiagnosticTime >= 0.5f){
+            sendWasDiagnostics();
+            wasLastDiagnosticTime = now;
+        }
     }
 
    // if(isCameraRecording){ checkRecording();}
@@ -303,6 +317,36 @@ void ofApp::runAction(string action, string amount){
 
 // WAS OSC commands are separate from the original incur input mapper so that
 // hardware-free operation never polls GPIO or the absent MCP3008 chip.
+void ofApp::nextWasEffect(){
+    // Cycle only installed top-level shader files; avoid folder menu items.
+    const vector<string> menu = getPathsForMenu(effectPage);
+    vector<string> names;
+    for(const auto& item : menu){
+        if(!item.empty() && item.back() != '|')
+            names.push_back(ofFilePath::getFileName(item));
+    }
+    if(names.empty()) return;
+
+    int nextIndex = 0;
+    for(size_t i = 0; i < names.size(); ++i){
+        if(ofFilePath::getBaseName(names[i]) == wasEffectName){
+            nextIndex = (static_cast<int>(i) + 1) % static_cast<int>(names.size());
+            break;
+        }
+    }
+    loadWasEffect(names[nextIndex]);
+}
+
+void ofApp::sendWasDiagnostics(){
+    ofxOscMessage message;
+    message.setAddress("/was/video/status");
+    message.addStringArg(wasEffectName);
+    message.addIntArg(effectPage.isPlaying ? 1 : 0);
+    message.addIntArg(videoInput.isReady() ? 1 : 0);
+    message.addFloatArg(ofGetFrameRate());
+    wasDiagnosticsSender.sendMessage(message, false);
+}
+
 bool ofApp::loadWasEffect(const string& requestedName){
     effectPage.menuList = getPathsForMenu(effectPage);
     for(const auto& item : effectPage.menuList){
@@ -310,6 +354,7 @@ bool ofApp::loadWasEffect(const string& requestedName){
         if(ofFilePath::getFileName(item) == requestedName ||
            ofFilePath::getBaseName(item) == requestedName){
             fxPlayer.loadShaderFiles("default.vert", item);
+            wasEffectName = ofFilePath::getBaseName(item);
             effectPage.isPlaying = true;
             ofLogNotice() << "WAS loaded effect " << item;
             return true;
@@ -323,8 +368,12 @@ void ofApp::readWasOsc(){
     while(wasOsc.hasWaitingMessages()){
         ofxOscMessage msg;
         wasOsc.getNextMessage(msg);
-        if(msg.getNumArgs() < 1) continue;
         const string address = msg.getAddress();
+        if(address == "/was/video/fx/next"){
+            nextWasEffect();
+            continue;
+        }
+        if(msg.getNumArgs() < 1) continue;
         try{
             if(address == "/was/video/fx/load"){
                 loadWasEffect(msg.getArgAsString(0));
