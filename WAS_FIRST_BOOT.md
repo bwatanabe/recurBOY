@@ -6,8 +6,9 @@ salvaged SSD1306 I²C OLED and two arcade buttons. No recurBOY shield.
 **Current status:** The official v3.1.0 image booted successfully on the
 Pi Zero 2 W, with SSH/Wi-Fi functioning. On 2026-11-16, the WAS-modified
 C++ app **compiled and linked successfully** on that Pi (`make -j1`, exit
-code `0`, created `bin/ofRecurBoy`). Runtime video capture, GLSL effects,
-OSC, OLED and buttons are **not yet verified**.
+code `0`, created `bin/ofRecurBoy`). Runtime video capture, GLSL effects, OSC and arcade buttons are **not yet verified**.
+The existing SSD1306 OLED **has displayed the new WAS diagnostic screen**
+after enabling I²C, as confirmed by the on-device test.
 See [WAS_SETUP.md](WAS_SETUP.md) for the shader/video/OSC architecture.
 
 ## 1. Flash the official image
@@ -232,6 +233,45 @@ the OLED diagnostic process. Button 1 is BCM17 and Button 2 BCM27,
 both active-low to ground. Rotary encoder BCM22/23/4 is reserved;
 PCM5102 DAC BCM18/19/21 is unused.
 
+## Verified diagnostic OLED (2026-11-16)
+
+On the Raspberry Pi Zero 2 W with the custom SSD1306 attached and I²C
+enabled, the independent `python3 was_diagnostics.py` successfully displayed
+its status interface. The I²C/OLED code is therefore functioning on the
+actual hardware, not merely syntax-checked.
+
+The `ENGINE: OFFLINE` message is expected until `ofRecurBoy` starts.
+The arcade buttons cannot visibly control video while the C++ process
+is offline; test their effect-bypass/cycle actions during integrated runtime.
+
+### Preparing to identify the UVC capture adapter
+
+Stop a standalone `was_diagnostics.py` session using Ctrl+C before
+launching `startWASHeadless` with `WAS_DIAGNOSTICS=1` to avoid duplicate
+monitor processes and OSC port 9010 conflicts.
+
+Connect the HDMI source to the UVC HDMI-to-USB capture adapter, connect
+the capture adapter to the Pi Zero 2 W **USB DATA / OTG** port (not the
+PWR IN port), and retain Pi mini-HDMI output to a monitor.
+
+```sh
+# Inspect V4L2 devices before/after connecting the adapter:
+v4l2-ctl --list-devices
+ls -l /dev/video*
+# Optional, for supported format/capture modes of the external device:
+v4l2-ctl -d /dev/videoN --list-formats-ext
+```
+
+IMPORTANT: `/dev/videoN` **is a Linux V4L2 node number**, whereas
+`WAS_CAPTURE_ID` is the **zero-based index of the device returned by
+openFrameworks ofVideoGrabber::listDevices()**. They need not match. The
+legacy video grabber path supports SD capture; start testing at 640×480
+and approx. 25–30 fps if offered.
+
+The original system reports internal bcm2835 codec and ISP V4L2 nodes
+even with no USB capture adapter connected. Identify the **new device
+by its capture-adapter name**, not simply by the presence of `/dev/video*`.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
@@ -263,6 +303,7 @@ disconnection, FX performance, and HDMI stability first.
 - [ ] Stock auto-start safely disabled (verify cron entry remains commented)
 - [x] WAS source installed and compiled in the stock application directory
 - [x] `make -j1` succeeds (exit 0; warnings only)
-- [ ] SSD1306 I2C OLED and both arcade buttons tested
+- [x] SSD1306 I2C OLED screen displays WAS diagnostic status
+- [ ] Arcade button 1/2 controls tested against running video engine
 - [ ] Compatible UVC capture device identified
 - [ ] USB capture -> shader -> HDMI tested and OSC verified
