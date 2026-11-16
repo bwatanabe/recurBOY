@@ -777,6 +777,36 @@ Interpretation:
 - Powered hub does not guarantee that source negotiation or driver
   quirks are fixed; inspect frame content and dmesg, not only FPS.
 
+## Powered-hub still-image statistics improved (2026-11-16)
+
+The user connected the MiraBox through an **externally powered USB
+hub** and captured five 1 FPS frames via FFmpeg from /dev/video0.
+Reported RGB means ranged roughly **[70–74, 61–66, 42–52]** and
+per-channel standard deviations **[66–69, 56–59, 40–52]**, compared
+to the earlier nearly uniform RGB (15,15,15) image.
+
+This is **evidence of varied image data** but not yet confirmation
+of a recognizable, correctly decoded, live HDMI feed. Also, the
+user's FFmpeg command saved results as
+`/home/pi/was_direct_01.png` through `_05.png`
+while the **powered hub** was connected: the shell variable
+`LABEL` remained `direct`. These files should be treated as
+the **hub** trial, not an independently captured direct-to-Pi
+baseline. Old files with those names may have been overwritten.
+
+Next:
+- Visually inspect `was_direct_03.png` (actually captured via hub).
+- Check `grep -Eic 'overread|EOI missing|No JPEG data|Invalid data' /home/pi/was_direct.log`,
+  and `dmesg | tail -n 30` to look for USB -71/reset errors
+  during the new test.
+- If frame is recognizable and USB is stable, relaunch
+  `WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 WAS_FX_SHADER=invert.frag sh startWASHeadless`
+  and use bypass for first live-feed validation. On devices
+  re-enumerating under a hub, inspect openFrameworks device list
+  before trusting capture index 2.
+- If standalone images look corrupt, continue USB/source tests before
+  changing the C++ app.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
