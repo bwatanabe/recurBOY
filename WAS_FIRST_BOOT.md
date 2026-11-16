@@ -511,6 +511,62 @@ openFrameworks fails, adjust how it selects a raw/decoded format and
 provide a better true-new-frame indicator on the OLED. Avoid
 recompiling until after independent V4L2 tests.
 
+## First successful independent V4L2 MJPEG capture, with USB errors (2026-11-16)
+
+After stopping the app (at least apparently), the user found MiraBox at
+`/dev/video0` and `/dev/video1`, and used `v4l2-ctl` to request
+**MJPG at 640×480 and 30fps**. The direct streaming command
+
+```sh
+v4l2-ctl -d /dev/video0 --stream-mmap=3 --stream-count=90 --stream-to=/dev/null
+```
+
+completed with **exit code 0**, 90 markers, about 25.74 to 28.57 fps.
+This verifies **compressed frame delivery** via V4L2, not JPEG decode
+or decoded image correctness. The prior `--list-formats-ext` attempt
+reported `Device or resource busy`; check for leftover
+`ofRecurBoy`, GStreamer, or another V4L2 process before subsequent
+testing.
+
+The same `dmesg` tail contained:
+
+```text
+usb 1-1: reset high-speed USB device number 6 using dwc2
+dwc2 3f980000.usb: NYET/NAK/ACK/other in non-error case
+usb 1-1: device descriptor read/64, error -71
+uvcvideo: Failed to query (GET_DEF) UVC control 11 ... -32
+```
+
+The Pi reports `vcgencmd get_throttled` = `throttled=0x0`.
+**Interpretation**: initial compressed capture is now proven possible,
+but the bus recorded USB protocol/reset errors. Pi-reported healthy 5V
+does *not* rule out unstable power to a USB capture card. Avoid claiming
+the card is consistently reliable or that direct 90 compressed frames
+prove MJPEG decoding works.
+
+### Controlled next steps
+
+Stop app and verify `pgrep -af 'ofRecurBoy|was_diagnostics|gst-launch|v4l2-ctl'`.
+Then run a *decoded* MJPEG test (if `gst-launch-1.0` is available):
+
+```sh
+gst-launch-1.0 -v v4l2src device=/dev/video0 num-buffers=90 \
+    ! image/jpeg,width=640,height=480,framerate=30/1 \
+    ! jpegdec ! videoconvert ! video/x-raw,format=RGB \
+    ! fakesink sync=false
+echo "GStreamer exit: $?"
+```
+
+If `jpegdec` is missing, collect the exact missing-plugin message;
+do not perform a system-wide OS update. Independently recheck
+`dmesg | tail` and whether `/dev/video0` remains stable.
+A short known-good OTG adapter and a **powered USB hub** are justified
+if USB reset errors persist, before rewriting the WAS renderer.
+Once compressed+decoded frames are stable, inspect whether the stock
+openFrameworks V4L2/libv4l2 picks MJPEG and erroneously uses its
+`video/x-raw,format=RGB` negotiation path; implement explicit MJPEG
+decode pipeline and frame counters as needed.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
