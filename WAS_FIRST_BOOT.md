@@ -3,9 +3,11 @@
 **Target:** Fresh microSD, Pi Zero 2 W, mini-HDMI monitor, built-in Wi-Fi,
 salvaged SSD1306 I²C OLED and two arcade buttons. No recurBOY shield.
 
-**Current status:** The official v3.1.0 image **has booted successfully**
-on the salvaged Pi Zero 2 W, with SSH/Wi-Fi functioning. The modified C++
-application still needs compiling and testing.
+**Current status:** The official v3.1.0 image booted successfully on the
+Pi Zero 2 W, with SSH/Wi-Fi functioning. On 2026-11-16, the WAS-modified
+C++ app **compiled and linked successfully** on that Pi (`make -j1`, exit
+code `0`, created `bin/ofRecurBoy`). Runtime video capture, GLSL effects,
+OSC, OLED and buttons are **not yet verified**.
 See [WAS_SETUP.md](WAS_SETUP.md) for the shader/video/OSC architecture.
 
 ## 1. Flash the official image
@@ -258,9 +260,9 @@ disconnection, FX performance, and HDMI stability first.
 - [x] Pi Zero 2 W starts and is reachable via SSH
 - [ ] Initial login password changed
 - [x] Stock app path, OS version, effects folders established
-- [ ] Stock auto-start safely disabled
-- [ ] WAS source installed, original C++ source backed up
-- [ ] `make -j1` succeeds
+- [ ] Stock auto-start safely disabled (verify cron entry remains commented)
+- [x] WAS source installed and compiled in the stock application directory
+- [x] `make -j1` succeeds (exit 0; warnings only)
 - [ ] SSD1306 I2C OLED and both arcade buttons tested
 - [ ] Compatible UVC capture device identified
 - [ ] USB capture -> shader -> HDMI tested and OSC verified
