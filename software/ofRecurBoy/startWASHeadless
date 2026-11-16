@@ -12,6 +12,8 @@ export WAS_OSC_PORT="${WAS_OSC_PORT:-8000}"
 export WAS_FX_SHADER="${WAS_FX_SHADER:-}"
 # Optional: launch the salvaged SSD1306 OLED + 2 arcade-button monitor.
 # Without this flag, the video engine uses no GPIO/I2C peripherals.
+# Optional, *experimental*: WAS_ENCODER=1 activates knob GPIO22/23/4
+# inside the OLED helper. Leave unset until basic video is stable.
 export WAS_DIAGNOSTICS="${WAS_DIAGNOSTICS:-0}"
 if [ "$WAS_DIAGNOSTICS" = "1" ]; then
     python3 ./was_diagnostics.py --control-port "$WAS_OSC_PORT" &
