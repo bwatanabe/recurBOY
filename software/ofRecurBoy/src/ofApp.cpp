@@ -343,7 +343,12 @@ void ofApp::sendWasDiagnostics(){
     message.addStringArg(wasEffectName);
     message.addIntArg(effectPage.isPlaying ? 1 : 0);
     message.addIntArg(videoInput.isReady() ? 1 : 0);
+    // This is *renderer* FPS. UVC readiness is connection status rather
+    // than proof that individual frames are arriving.
     message.addFloatArg(ofGetFrameRate());
+    for(int i = 0; i < 3; ++i){
+        message.addFloatArg(fxPlayer.shaderParams[i]);
+    }
     wasDiagnosticsSender.sendMessage(message, false);
 }
 
@@ -355,6 +360,17 @@ bool ofApp::loadWasEffect(const string& requestedName){
            ofFilePath::getBaseName(item) == requestedName){
             fxPlayer.loadShaderFiles("default.vert", item);
             wasEffectName = ofFilePath::getBaseName(item);
+            if(wasHeadless){
+                // Many recurBOY shaders expect nonzero knob values.
+                // This particular invert.frag uses abs(mix(.05,1,p)-pixel);
+                // value 1.0 on all three channels yields a true negative.
+                // Other shaders start halfway through their range rather
+                // than at an often-neutral or divide-by-zero value.
+                const float startingValue = wasEffectName == "invert" ? 1.0f : 0.5f;
+                for(int i = 0; i < 3; ++i){
+                    fxPlayer.shaderParams[i] = startingValue;
+                }
+            }
             effectPage.isPlaying = true;
             ofLogNotice() << "WAS loaded effect " << item;
             return true;
