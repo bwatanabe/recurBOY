@@ -807,6 +807,38 @@ Next:
 - If standalone images look corrupt, continue USB/source tests before
   changing the C++ app.
 
+## FIRST END-TO-END HDMI VIDEO SUCCESS with powered hub (2026-11-16)
+
+**User-confirmed breakthrough:** With the MiraBox USB connected through
+an **externally powered USB hub** (rather than powered directly via
+the Pi Zero 2 W USB OTG connection), video now plays live through the
+Pi/recurBOY **HDMI output** to the monitor. The WAS video pipeline is
+functional end to end and **Button 1 FX bypass toggles successfully**.
+A **slight reduction in saturation** is visible when switching between
+bypass and processed modes, but the video is working.
+
+This is compelling evidence the powered hub or changed USB physical
+link addresses the immediate black/frozen capture failure; we have
+**not proven whether the root cause is power supply, signal integrity,
+USB controller compatibility, or something else**. Earlier direct
+Pi USB use generated malformed MJPEG/USB -71 errors.
+
+Follow-up verification for exhibition readiness:
+1. Keep powered hub and reliable Pi power for now; avoid touching the
+   known-working capture code/configuration.
+2. Run an uninterrupted 20-30 minute test with moving HDMI content and
+   periodically toggle BYPASS/FX; verify no freeze, reconnect, or
+   excessive JPEG errors; inspect `dmesg | tail -n 40`.
+3. Check OSC shader changing and OLED readouts; consider robust
+   shutdown of `was_diagnostics.py`, stale OLED power-on state, and
+   monitoring **actual received frame count**, not simply "UVC READY."
+4. Later compare screenshot color in bypass vs invert shader (and
+   source TV passthrough) to isolate saturation difference. Avoid
+   prematurely assigning cause to color-space conversion.
+5. Update the boot guide for a powered-hub wiring diagram; once
+   stable, implement autostart / watchdog and WAS cartridge lifecycle
+   start/stop.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
