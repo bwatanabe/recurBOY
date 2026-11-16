@@ -272,6 +272,54 @@ The original system reports internal bcm2835 codec and ISP V4L2 nodes
 even with no USB capture adapter connected. Identify the **new device
 by its capture-adapter name**, not simply by the presence of `/dev/video*`.
 
+## Verified MiraBox USB capture enumeration (2026-11-16)
+
+The user identified a passive USB cable as the cause of the initial failure to
+enumerate the HDMI capture dongle. Replacing it with a **USB OTG adapter**
+solved the problem without changing the Pi's boot configuration. On-device
+`v4l2-ctl --list-devices` now reports:
+
+```text
+MiraBox Video Capture: MiraBox (usb-3f980000.usb-1):
+    /dev/video0
+    /dev/video1
+```
+
+Internal `bcm2835-codec` and `bcm2835-isp` nodes remain at
+`/dev/video10` through `/dev/video16`. The MiraBox is recognized
+by Linux but **no actual video frames have been verified yet**.
+
+### First live-capture validation
+
+With the MiraBox still on the Pi's USB DATA port and receiving
+a normal HDMI signal (not protected HDCP content):
+
+```sh
+v4l2-ctl -d /dev/video0 --list-formats-ext
+# Check whether the source supports a 640x480 mode, ideally ~25/30 fps.
+# The original captur.cpp requests fixed 640x480.
+
+# Ensure the standalone OLED test was stopped with Ctrl+C.
+cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+WAS_CAPTURE_ID=0 WAS_DIAGNOSTICS=1 sh startWASHeadless
+```
+
+On first launch, use the OLED's active-low **Button 1** to bypass FX and
+look for **unprocessed video** on the Pi mini-HDMI output. Button 2 cycles
+the available installed shaders. Observe whether OLED switches to
+`ENGINE: ONLINE`, `UVC: READY`, and whether a real image displays.
+
+If anything fails, capture the terminal output (the C++ renderer logs
+device enumeration, shader loading, and initialization errors). The
+Linux node `/dev/video0` does **not guarantee** openFrameworks
+`WAS_CAPTURE_ID=0`; the latter indexes the list of available
+`ofVideoGrabber` devices. Try a different index only after seeing
+the device list/log.
+
+If the Pi mini-HDMI only shows the login screen, investigate whether
+openFrameworks starts graphics rendering at all before changing
+shader settings.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
@@ -305,5 +353,5 @@ disconnection, FX performance, and HDMI stability first.
 - [x] `make -j1` succeeds (exit 0; warnings only)
 - [x] SSD1306 I2C OLED screen displays WAS diagnostic status
 - [ ] Arcade button 1/2 controls tested against running video engine
-- [ ] Compatible UVC capture device identified
+- [x] MiraBox USB UVC device recognized by Linux as /dev/video0 and /dev/video1 with OTG adapter
 - [ ] USB capture -> shader -> HDMI tested and OSC verified
