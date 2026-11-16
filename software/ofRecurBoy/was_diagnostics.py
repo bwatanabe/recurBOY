@@ -96,7 +96,7 @@ def print_wiring():
     print("      SDA=GPIO2 (3), SCL=GPIO3 (5)")
     print("Button 1: GPIO17 (11), active-low to GND -> effect bypass")
     print("Button 2: GPIO27 (13), active-low to GND -> next effect")
-    print("Encoder reserved: GPIO22 (15), GPIO23 (16), GPIO4 (7)")
+    print("Encoder optional: GPIO22 (15), GPIO23 (16), GPIO4 (7)")
     print("I2S DAC unused: GPIO18 (12), GPIO19 (35), GPIO21 (40)")
 
 
