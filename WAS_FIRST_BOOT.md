@@ -567,6 +567,57 @@ openFrameworks V4L2/libv4l2 picks MJPEG and erroneously uses its
 `video/x-raw,format=RGB` negotiation path; implement explicit MJPEG
 decode pipeline and frame counters as needed.
 
+## GStreamer CLI unavailable, OLED process still running (2026-11-16)
+
+The first proposed manual GStreamer decode test could **not run** on
+the stock image:
+
+```text
+-bash: gst-launch-1.0: command not found
+GStreamer exit code: 127
+```
+
+This is **missing diagnostic CLI**, not a video decode result and
+not proof that GStreamer libraries are absent. The C++ runtime uses
+GStreamer already.
+
+`pgrep -af 'ofRecurBoy|was_diagnostics|gst-launch'` reported only
+`python3 ./was_diagnostics.py --control-port 8000` (PID 1342). Thus
+the previous video engine was gone but an OLED helper was still
+running. Stop that process before launching a new helper to avoid
+GPIO channel-in-use warnings and OSC port conflicts:
+
+```sh
+kill 1342
+pgrep -af 'ofRecurBoy|was_diagnostics|gst-launch'
+```
+
+PID is specific to this test and must not be hardcoded for future runs.
+The shell launcher has an EXIT trap but an interactive interruption may
+not always have stopped the helper; examine signal handling later.
+
+Prefer seeing whether `ffmpeg` CLI is installed before requesting
+additional packages:
+
+```sh
+command -v ffmpeg || true
+command -v gst-launch-1.0 || true
+```
+
+If available, independently decode 90 MJPEG frames using:
+
+```sh
+ffmpeg -hide_banner -f v4l2 -input_format mjpeg \
+  -video_size 640x480 -framerate 30 -i /dev/video0 \
+  -frames:v 90 -f null -
+```
+
+If neither CLI exists, consider installing **only**
+`gstreamer1.0-tools` (which supplies gst-launch-1.0) without
+upgrading old OS or replacing the official recurBOY image.
+Alternatively capture raw MJPEG bytes with V4L2 and decode with the
+already available Pillow library.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
