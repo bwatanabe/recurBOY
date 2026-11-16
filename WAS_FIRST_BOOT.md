@@ -301,7 +301,7 @@ v4l2-ctl -d /dev/video0 --list-formats-ext
 
 # Ensure the standalone OLED test was stopped with Ctrl+C.
 cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
-WAS_CAPTURE_ID=0 WAS_DIAGNOSTICS=1 sh startWASHeadless
+WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 sh startWASHeadless
 ```
 
 On first launch, use the OLED's active-low **Button 1** to bypass FX and
@@ -320,6 +320,51 @@ If the Pi mini-HDMI only shows the login screen, investigate whether
 openFrameworks starts graphics rendering at all before changing
 shader settings.
 
+## Verified first WAS runtime / MiraBox device index (2026-11-16)
+
+The **WAS-modified C++ renderer starts on the Pi Zero 2 W** with
+OpenGL ES 2.0 / VideoCore IV, and the installed shader
+`/home/pi/EFFECT/ANSIlike.frag` successfully compiles and links.
+The OLED displays `ENGINE: ONLINE` and `UVC: READY`.
+
+However, the **first image was black**. The runtime log identifies the
+cause of at least one problem: `WAS_CAPTURE_ID=0` selected the internal
+`bcm2835-isp` at `/dev/video14`, not the MiraBox.
+
+The captured `ofGstVideoGrabber::listDevices()` numbering was:
+
+| WAS_CAPTURE_ID | openFrameworks capture device |
+|---|---|
+| `0` | internal `/dev/video14` bcm2835-isp |
+| `1` | internal `/dev/video15` bcm2835-isp |
+| **`2`** | **MiraBox UVC `/dev/video0`** |
+| `3` | MiraBox UVC `/dev/video1` |
+
+Therefore this Pi + MiraBox combination must be started using **index
+`2`** rather than the previously suggested provisional index `0`.
+
+Additionally, the initial source was an iPad playing Hulu. Licensed Hulu
+video can output black due to HDMI HDCP/DRM protection. Use the iPad
+home screen, a personally recorded Photos video, or another unprotected
+source for the first capture test. Do not attempt to circumvent HDCP.
+
+Stop the prior process and start:
+
+```sh
+cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 sh startWASHeadless
+```
+
+On successful source selection, the runtime log should say it selected
+MiraBox, not bcm2835-isp. The ready indicator only confirms
+`ofVideoGrabber` initialized, **not** that live frames are actually being
+received. Check the video image in bypass with arcade Button 1.
+
+The existing `startWASHeadless` script already defaults to capture
+index `2`; do not change the C++ code or recompile for this correction.
+We should later add robust capture selection by hardware identifier
+instead of relying on index order.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
@@ -330,10 +375,9 @@ cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
 WAS_CAPTURE_ID=0 WAS_DIAGNOSTICS=1 sh startWASHeadless
 ```
 
-The value `WAS_CAPTURE_ID=0` is only a first guess; inspect UVC device
-enumeration to find the actual openFrameworks device index.
-The script itself defaults to index 2 for compatibility with the upstream
-code, but hardware enumeration differs.
+On this exact Pi Zero 2 W + MiraBox setup, the runtime log confirms
+openFrameworks index **2** corresponds to `/dev/video0` (MiraBox).
+Index 0 was an internal Pi ISP and produced a black image.
 
 The optional OLED shows effect name, reported frame rate, and capture
 readiness. Button 1 toggles bypass and Button 2 cycles through top-level
