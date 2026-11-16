@@ -895,6 +895,80 @@ from live USB capture; `ioctl GABS failed` comes from the legacy
 input-event setup incorrectly seeing MiraBox as mouse/keyboard.
 Neither currently prevents video output.
 
+## WAS video processor v0.2 source update (2026-11-16) — NOT yet installed/tested on Pi
+
+**Architecture clarification from the artist:** recurBOY is **not a
+cartridge**. It is a global video-FX processor **after** the selected
+WAS cartridge in the HDMI/display pipeline. Effects may be controlled
+via standalone buttons/encoder, OSC from WAS, and future autonomous
+actors or supervisory logic. It must remain independent of cartridge
+switching.
+
+**Output sizing:** earlier small center image was content-dependent.
+User confirmed a Hulu movie source **fills the HDMI monitor** through
+the working recurBOY pipeline. Do not pursue FBO resizing unless a
+different source demonstrates an actual rendering bug.
+
+**User's v0.1 test:** `invert.frag` was near-unchanged when loaded,
+but OSC setting parameters 0–2 to 1.0 produced a clear, live inverted
+video image and Button 1 bypass toggled it successfully. Thus shader,
+FX FBO application, button, OSC and Pi HDMI output work.
+
+**Committed source changes, not yet verified on the physical Pi:**
+
+- `src/ofApp.cpp` initializes parameter values to `1.0` when
+  loading `invert`, to `0.5` on other effects; reports the three
+  parameters to the OLED's OSC status stream
+- `src/main.cpp` selects `OF_LOG_NOTICE` in `WAS_HEADLESS=1`,
+  suppressing verbose GStreamer `unhandled message` spam without
+  dropping warnings/errors; original non-WAS mode remains verbose
+- `was_diagnostics.py` optionally uses encoder A/B on GPIO22/23 and
+  push switch on GPIO4, **only with `WAS_ENCODER=1`**. Rotation
+  adjusts selected FX parameter by 0.05, press selects param 0/1/2.
+  OLED now shows FX parameter value and labels UVC as `LINK` (not
+  guaranteed live frames), FPS as renderer FPS
+- `was_diagnostics.py` handles SIGINT/SIGTERM for OLED display-off
+  and GPIO cleanup, `startWASHeadless` includes graceful helper
+  termination and wait
+- `installWASIntoImage.sh` now also backs up and installs
+  `src/main.cpp` so log settings take effect
+- Updated `WAS_SETUP.md` to document architecture, tested power
+  path, encoder wiring and manual deploy
+
+**First test** (while leaving the powered hub connected):
+
+```sh
+# In the running SSH session, stop the current renderer with Ctrl+C.
+cd /home/pi/recurBOY-was
+git status --short
+git pull --ff-only
+sh software/ofRecurBoy/installWASIntoImage.sh
+cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+make -j1 > /home/pi/was_build_v02.log 2>&1
+echo "Build exit code: $?"
+tail -n 25 /home/pi/was_build_v02.log
+# If build 0:
+WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 WAS_FX_SHADER=invert.frag sh startWASHeadless
+```
+
+Expected: video continues working; invert is immediately visible
+without extra OSC commands, Button1 bypass works, Button2 selects
+next effect, terminal no longer spams verbose GStreamer messages,
+OLED reports current shader and parameter.
+
+**Only after baseline works**, test experimental encoder:
+
+```sh
+# Stop first with Ctrl+C; then:
+WAS_ENCODER=1 WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 \
+  WAS_FX_SHADER=invert.frag sh startWASHeadless
+```
+
+Encoder was historically unreliable; do **not** depend on it for the
+exhibition until tested. No service/autostart changes have been
+applied. A systemd service and a WAS-owned supervisor remain later
+work; don't switch on autostart until the above build/test passes.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
