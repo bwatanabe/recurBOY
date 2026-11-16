@@ -10,4 +10,14 @@ export WAS_OSC_PORT="${WAS_OSC_PORT:-8000}"
 # Set WAS_FX_SHADER to the name or filename of an installed EFFECT/Fx shader.
 # Empty means choose the first top-level shader found in recurBOY's folders.
 export WAS_FX_SHADER="${WAS_FX_SHADER:-}"
-exec make run
+# Optional: launch the salvaged SSD1306 OLED + 2 arcade-button monitor.
+# Without this flag, the video engine uses no GPIO/I2C peripherals.
+export WAS_DIAGNOSTICS="${WAS_DIAGNOSTICS:-0}"
+if [ "$WAS_DIAGNOSTICS" = "1" ]; then
+    python3 ./was_diagnostics.py --control-port "$WAS_OSC_PORT" &
+    diagnostics_pid=$!
+    trap 'kill "$diagnostics_pid" 2>/dev/null || true' EXIT
+    make run
+else
+    exec make run
+fi
