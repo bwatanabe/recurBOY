@@ -451,6 +451,66 @@ Do not update the end-of-life Stretch OS or modify `/boot/config.txt`
 just to troubleshoot until basic power, cable, and power-management
 tests are complete.
 
+## Verified GStreamer decoding failure (2026-11-16)
+
+After a reboot, the MiraBox was recognized with the expected
+`WAS_CAPTURE_ID=2`. Its video capture device appeared as `/dev/video0`.
+The OF/GStreamer log reports successful OpenGL initialization and correct
+device selection, then:
+
+```text
+initGrabber(): selected device: MiraBox Video Capture
+initGrabber(): selected format: 640x480 video/x-raw RGB framerate: 30/1
+gstreamer pipeline: v4l2src ... device=/dev/video0 ! video/x-raw,format=RGB,width=640,height=480,framerate=30/1 ! appsink ...
+libv4l2: error got 4 consecutive frame decode errors, last error: v4l-convert: libjpeg error: End Of Image
+ofGstUtils: ... video playback halted ... Failed to allocate a buffer
+```
+
+Thus the current failure is **not merely an incorrect camera index**
+and not proof of an EGL/shader problem. The GStreamer pipeline requests
+an RGB stream but the UVC camera also advertises `image/jpeg` (MJPEG).
+The `libv4l2` conversion layer appears to be decoding invalid or
+truncated JPEG frames. A follow-on buffer-allocation failure occurs.
+This could result from a UVC stream/bandwidth/power problem, broken
+conversion negotiation, or bad camera output; **not yet conclusively
+isolated**. The OLED's "UVC READY" is based on `isInitialized()` and
+does *not* imply valid frames have arrived.
+
+**Next isolation steps** — stop WAS first so the video device is free;
+use an unprotected, ordinary iPad home screen/Photos source:
+
+```sh
+v4l2-ctl --list-devices
+# Use the MiraBox's current capture-capable /dev/videoN (often /dev/video0).
+v4l2-ctl -d /dev/video0 --list-formats-ext
+v4l2-ctl -d /dev/video0 --get-fmt-video
+
+# Independent kernel-side capture with data discarded:
+v4l2-ctl -d /dev/video0 --stream-mmap=3 --stream-count=90 --stream-to=/dev/null
+echo "exit code: $?"
+dmesg | tail -n 40
+vcgencmd get_throttled
+```
+
+If available formats include `MJPG` and `YUYV`, test **one explicit
+format at a time**, such as:
+
+```sh
+# Do NOT run simultaneously with the video engine; requests 640x480 MJPG.
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=640,height=480,pixelformat=MJPG
+v4l2-ctl -d /dev/video0 --set-parm=30
+v4l2-ctl -d /dev/video0 --stream-mmap=3 --stream-count=90 --stream-to=/dev/null
+```
+
+These commands read and discard frames; they do not require a GUI and
+do not modify the user's permanent video settings. If the device
+drops off USB again (`dmesg` disconnect/re-enumeration), first test a
+known-good short OTG cable and **powered USB 2.0 hub** to isolate USB
+power/signal stability. If standalone frames are stable yet
+openFrameworks fails, adjust how it selects a raw/decoded format and
+provide a better true-new-frame indicator on the OLED. Avoid
+recompiling until after independent V4L2 tests.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
