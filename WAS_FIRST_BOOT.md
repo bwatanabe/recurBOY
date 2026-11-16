@@ -839,6 +839,62 @@ Follow-up verification for exhibition readiness:
    stable, implement autostart / watchdog and WAS cartridge lifecycle
    start/stop.
 
+## Invert shader looks nearly unchanged; verbose GStreamer log spam (2026-11-16)
+
+User reports OLED displays `FX: invert` and live video through the
+powered-hub Pi output, but toggling bypass yields only a slightly
+different color/saturation. Full startup log confirms shader
+`/home/pi/EFFECT/invert.frag` **compiled, linked, and loaded**.
+
+Critical shader math from the actual logged GLSL:
+
+```glsl
+float f0 = mix(0.05, 1.0, fparams[0]);
+float f1 = mix(0.05, 1.0, fparams[1]);
+float f2 = mix(0.05, 1.0, fparams[2]);
+vec4 v = texture2D(tex,tcoord);
+gl_FragColor = vec4(abs(f0-v.r), abs(f1-v.g),
+                    abs(f2-v.b), 1.0);
+```
+
+The `conjur` shader parameters initialize at zero, so this shader
+is **not actually an RGB inversion by default**. Each channel's
+reference is `0.05`, yielding nearly unchanged colors for most
+pixels, matching the slight dimming. Setting all three parameters to
+**1.0** makes the effect `abs(1.0 - v.rgb) = 1.0 - v.rgb`, a
+recognizable negative. The C++ WAS `readWasOsc()` receives
+`/was/video/fx/param/0`, `1`, `2` and calls
+`setEffectParamN(float)`, so this is directly testable without
+rebuild or restart:
+
+```sh
+python3 - <<'PY'
+from pythonosc.udp_client import SimpleUDPClient
+client = SimpleUDPClient("127.0.0.1", 8000)
+for i in range(3):
+    client.send_message("/was/video/fx/param/{}".format(i), 1.0)
+print("Sent RGB inversion parameters")
+PY
+```
+
+Watch OLED/monitor: toggle FX BYPASS/ON after this message. If
+recognizable negative appears, effect loading/apply and OSC are proven.
+
+The repeated `[verbose] ofGstUtils: gstHandleMessage(): unhandled
+message from video_source` lines are **not GStreamer error reports**.
+They are verbose logging for an internal GStreamer bus message that
+the legacy openFrameworks helper doesn't explicitly handle; with
+working live video, they are not evidence of a fault. Suppress only
+verbose logging (e.g. selectively in C++ for the `ofGstUtils`
+module or application-wide log level) **after** verifying effects;
+avoid hiding real `warning` or `error` messages.
+
+Other startup issues noted: `READER COULD NOT OPEN` belongs to the
+unused recurBOY VIDEO file player during initialization, separate
+from live USB capture; `ioctl GABS failed` comes from the legacy
+input-event setup incorrectly seeing MiraBox as mouse/keyboard.
+Neither currently prevents video output.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
