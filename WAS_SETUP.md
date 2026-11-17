@@ -1,4 +1,4 @@
-# WAS recurBOY — shared video-effects processor (v0.2)
+# WAS recurBOY — shared video-effects processor (v0.3)
 
 > **Status (Nov 16, 2026): Pi Zero 2 W build and first end-to-end HDMI test succeeded.** Live HDMI-in from a MiraBox through an **externally powered USB hub**, GLSL color-negative processing, OLED status, button-1 bypass, and OSC FX parameters have been tested on device. The v0.2 default FX settings, quieter logging, diagnostics cleanup, and experimental encoder code are **committed but still need on-device rebuild and verification**.
 
@@ -160,6 +160,107 @@ the WAS helper. Shader names must match those actually on the Pi image.
 Loading the requested shader is not yet guarded by a compile/link success
 check. OSC control has no authentication; keep it on a trusted/private
 network.
+
+## v0.3 Classic character generator — single-layer OSC text
+
+**Source implemented and committed, NOT YET COMPILED/TESTED ON PI.**
+The renderer already draws `thisTextObject` above the output video,
+*after* shader FX. v0.3 exposes that existing single text object as an
+OSC-controlled character generator. It is independent of the current
+WAS cartridge, the active FX, and the FX bypass button.
+
+Design intentionally resembles a simple vintage video-mixer title
+generator: one persistent message, no animation, no timer, no stacking,
+no frame rendering changes, no additional hardware.
+
+**Default behavior in WAS mode:**
+- Text is **hidden** on process startup; `set` replaces the message
+  and immediately shows it, unless empty
+- `enabled 0` hides the title but retains its contents;
+  `enabled 1` shows it again
+- `clear` removes the message and hides the overlay
+- Default: white DejaVu Sans 40-point font loaded from the tested Pi
+  system, x=0.08, baseline y=0.14 (top-down), size=0.2, alpha=1.0
+- Title is always composited **post-FX**; bypassing FX never removes
+  the title
+- Text may contain newline characters, but no wrapping, scrolling,
+  multiple independently placed blocks or animation; keep messages
+  short for readability at 1280x720
+- Title strings over **512 bytes UTF-8** are rejected. Behavior for
+  non-ASCII glyphs depends on available openFrameworks font support.
+  Plain English/ASCII is the reliable first test
+
+**OSC API** (same UDP port 8000):
+
+| OSC address | Type | Meaning |
+|---|---|---|
+| `/was/video/text/set` | string | Replace message and show it |
+| `/was/video/text/enabled` | int 0/1 | Hide/show without erasing |
+| `/was/video/text/clear` | no args | Clear contents and hide |
+| `/was/video/text/x` | float 0..1 | Horizontal text start, left to right |
+| `/was/video/text/y` | float 0..1 | Text **baseline**, top to bottom |
+| `/was/video/text/size` | float 0..1 | Legacy normalized text size; changes both scales equally |
+| `/was/video/text/hue` | float 0..1 | HSB hue |
+| `/was/video/text/sat` | float 0..1 | HSB saturation (0=white/gray) |
+| `/was/video/text/brightness` | float 0..1 | HSB brightness |
+| `/was/video/text/alpha` | float 0..1 | Opacity |
+| `/was/video/text/font` | string | Installed `.ttf` or `.otf` **basename** only |
+
+The optional font selector searches `/home/pi/FONT` and
+`/media/usb0/FONT`, and intentionally does **not** allow OSC senders
+to specify arbitrary filesystem paths. Font loader behavior remains
+that of stock recurBOY.
+
+**Mac-side control via `was_fxctl.py` (standard library only):**
+
+```sh
+# After updating/copying the script from Pi (see deployment below)
+FX="python3 ~/Desktop/was_fxctl.py --host 192.168.0.109"
+
+$FX title "THE TRANSMISSION CONTINUES"
+$FX title-x 0.08
+$FX title-y 0.14
+$FX title-size 0.2
+$FX title-hue 0.0
+$FX title-sat 0.0
+$FX title-brightness 1.0
+$FX title-alpha 1.0
+$FX title "LINE ONE\\nLINE TWO"
+$FX title-show 0
+$FX title-show 1
+$FX title-clear
+```
+
+**To deploy and test when back at the Pi** (stop the currently running
+processor/service first; prevent it from auto-restarting during a
+manual test, if it has since been enabled):
+
+```sh
+cd /home/pi/recurBOY-was
+git status --short
+git pull --ff-only
+sh software/ofRecurBoy/installWASIntoImage.sh
+cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+make -j1 > /home/pi/was_build_v03.log 2>&1
+echo "Build exit: $?"
+tail -n 20 /home/pi/was_build_v03.log
+
+# Launch only after build exit 0. Use the known-working path first:
+WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 WAS_ENCODER=1 \
+  WAS_FX_SHADER=invert.frag sh startWASHeadless
+```
+
+Then, **on the Mac**, refresh `was_fxctl.py` from the Pi:
+```sh
+scp pi@192.168.0.109:/home/pi/openframeworks10.1/apps/myApps/ofRecurBoy/was_fxctl.py ~/Desktop/
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 title "WAS CHARACTER GENERATOR"
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 title-clear
+```
+
+Test title visibility both with effect ON and FX BYPASS; video should
+remain live throughout. If compilation fails, preserve log output and
+the original working build; timestamped backups are created by the
+installer. No boot settings are touched.
 
 ## Output-stage deployment: direct launcher, OSC client and optional boot service
 
