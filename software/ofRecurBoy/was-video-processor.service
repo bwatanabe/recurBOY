@@ -1,0 +1,27 @@
+# Optional systemd service for the independent WAS output video processor.
+# This file is a template; the installation script does not enable it.
+# Tested manually only after deployment to the legacy recurBOY Pi.
+[Unit]
+Description=WAS shared HDMI video FX processor (recurBOY)
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+Environment=WAS_APP_DIR=/home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+Environment=WAS_CAPTURE_ID=2
+Environment=WAS_DIAGNOSTICS=1
+Environment=WAS_ENCODER=1
+Environment=WAS_FX_SHADER=invert.frag
+Environment=WAS_OSC_PORT=8000
+ExecStart=/bin/sh /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy/runWASVideoProcessor
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillMode=mixed
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
