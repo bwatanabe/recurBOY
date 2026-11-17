@@ -1,6 +1,6 @@
 # WAS recurBOY — shared video-effects processor (v0.3)
 
-> **Status (Nov 16, 2026): Pi Zero 2 W build and first end-to-end HDMI test succeeded.** Live HDMI-in from a MiraBox through an **externally powered USB hub**, GLSL color-negative processing, OLED status, button-1 bypass, and OSC FX parameters have been tested on device. The v0.2 default FX settings, quieter logging, diagnostics cleanup, and experimental encoder code are **committed but still need on-device rebuild and verification**.
+> **Status (Nov 16, 2026): v0.2 successfully rebuilt and exercised on Pi Zero 2 W.** Tested live HDMI input via MiraBox + **externally powered USB hub**, GLSL color-negative processing, OLED diagnostics, button-1 bypass, encoder adjustment, and OSC shader/parameter controls. Physical Button 2 is a known wiring problem (GPIO27 stays HIGH); it is not a software blocker. **The v0.3 OSC character generator is committed but not yet compiled or tested on the Pi.**
 
 > **Architectural role: this is not a WAS cartridge.** It is a permanent shared output-stage processor. Any WAS cartridge (PS-2600, Naninovel, emulator, etc.) can feed its HDMI content through this unit; the processor applies global effects irrespective of the selected cartridge.
 >
