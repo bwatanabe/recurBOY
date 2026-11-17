@@ -161,6 +161,91 @@ Loading the requested shader is not yet guarded by a compile/link success
 check. OSC control has no authentication; keep it on a trusted/private
 network.
 
+## Output-stage deployment: direct launcher, OSC client and optional boot service
+
+**The shared recurBOY processor is not a cartridge and must not restart
+every time WAS switches cartridges.** WAS changes only the upstream HDMI
+source/content and, optionally, the processor's OSC state. The Pi remains
+its own long-running output-stage device.
+
+Following a successful v0.2 build and stable live HDMI/USB capture, the
+`runWASVideoProcessor` launcher starts the **already-built**
+`bin/ofRecurBoy` without running `make`. It also starts the optional
+OLED / button daemon, then cleans up both children on termination.
+Its defaults are `WAS_CAPTURE_ID=2`, `WAS_DIAGNOSTICS=1`,
+`WAS_ENCODER=0` and `WAS_FX_SHADER=invert.frag`. The powered
+USB hub remains necessary for the known-working Pi Zero 2 W setup.
+
+```sh
+# In the Pi SSH session, stop the old 'sh startWASHeadless' with Ctrl+C.
+cd /home/pi/recurBOY-was
+git status --short
+git pull --ff-only
+sh software/ofRecurBoy/installWASIntoImage.sh
+# This update only deploys scripts; prior build remains usable
+# if the C++ source has not changed since successful v0.2 build.
+
+cd /home/pi/openframeworks10.1/apps/myApps/ofRecurBoy
+WAS_ENCODER=1 sh runWASVideoProcessor
+```
+
+Confirm the video output, OLED and encoder function. The second
+physical button is **known to remain HIGH on GPIO27 when pressed**;
+its wiring needs inspection/rebuild, so do not conflate that with
+the remote OSC next-FX command, which was proven working.
+
+From the **Mac**, without installing `python-osc`, copy the
+standalone OSC control script and send commands to the Pi over LAN:
+
+```sh
+scp pi@192.168.0.109:/home/pi/openframeworks10.1/apps/myApps/ofRecurBoy/was_fxctl.py ~/Desktop/
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 load invert.frag
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 param 0 1.0
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 next
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 enable 0
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 enable 1
+```
+
+The client uses only Python's standard library and implements OSC
+strings, 32-bit floats and ints on UDP port 8000. Like any simple
+UDP sender, success means the packet was sent; confirmation comes
+from the screen/OLED or future WAS acknowledgement/status endpoint.
+
+**Opt-in systemd service (do not enable on boot until first manual
+tests succeed):** Stop the manually running launcher (Ctrl+C), then:
+
+```sh
+sudo cp /home/pi/recurBOY-was/software/ofRecurBoy/was-video-processor.service \
+        /etc/systemd/system/was-video-processor.service
+sudo systemctl daemon-reload
+sudo systemctl start was-video-processor
+sudo systemctl status --no-pager was-video-processor
+sudo journalctl -u was-video-processor -f
+```
+
+The service runs as user `pi`, uses the Pi-native EGL renderer,
+starts the app directly from `bin/`, and restarts after an unexpected
+exit. The unit ships with `WAS_ENCODER=1` because encoder input
+has been verified on the user's unit. If it fails or video does not
+appear, use `sudo systemctl stop was-video-processor` and switch
+back to manual launching; no persistent boot configuration has been
+changed. If the service runs reliably and starts video after a
+controlled reboot, optionally enable it:
+
+```sh
+sudo systemctl enable was-video-processor
+# Later rollback:
+sudo systemctl disable --now was-video-processor
+```
+
+Note: service-based EGL startup on legacy Raspbian Stretch is
+**unverified** until tested on hardware. Do not replace the known-
+working manual launcher or modify system services behind the artist's
+back. The service's reconnect/watchdog behavior is still limited:
+it restarts if the process exits, not if USB capture silently freezes
+while the process remains alive. Future work should monitor actual
+new UVC frames, not renderer FPS or `isReady()` alone.
+
 ## Hardware notes: salvaged SquishBox / MT32-Pi controls
 
 This reuses the **confirmed historical wiring** supplied from the prior
