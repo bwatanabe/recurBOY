@@ -87,8 +87,10 @@ void ofApp::setup(){
     isCameraRecording = false;
 
     thisTextObject = textObject();
-    thisTextObject.loadFont("arial.tff");
     if(wasHeadless){
+        // Use the system font confirmed to exist on the tested Pi image.
+        // The stock spelling "arial.tff" relies on openFrameworks fallback.
+        thisTextObject.loadFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
         // Classic video-mixer character generator: one clean overlay,
         // composited over the processed video in draw(), not through FX.
         // Visible only after a WAS text/set or explicit enabled command.
@@ -103,7 +105,10 @@ void ofApp::setup(){
         thisTextObject.brightness = 1.0f;
         thisTextObject.alpha = 1.0f;
     }
-
+    else{
+        // Preserve the original recurBOY behavior outside WAS mode.
+        thisTextObject.loadFont("arial.tff");
+    }
 
     runningSource = sourceModes[0];
     currentPage = runningSource;
