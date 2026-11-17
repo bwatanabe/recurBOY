@@ -1011,6 +1011,66 @@ encoder tweaks, FX transitions, `dmesg` USB errors, and a watchdog
 based on *actual incoming video frame events*. Existing OLED
 `UVC:LINK` means device readiness only, not fresh frames.
 
+## v0.3 single-layer character generator (2026-11-16) — COMMITTED, NOT YET PI-TESTED
+
+Artist's request: analog-feeling video-effects-box text overlay in
+the persistent, **cartridge-independent** output video processor.
+**No multiple text layers, no animation, no automatic timing.**
+
+Examined stock `textObject` in `ofApp.h` and confirmed drawing order
+in `ofApp.cpp`: the single text object is drawn **after** the
+FX framebuffer in `ofApp::draw()`. Existing setters already handle
+position, independent scaling, H/S/B and alpha. The original UI
+offers live text and saved .txt files, but the WAS headless
+`readWasOsc()` previously had **no character-generator controls**.
+
+Implemented in the development branch:
+
+- `/was/video/text/set` OSC string: replace title, show immediately
+- `/was/video/text/enabled` OSC int 0/1: hide/show
+- `/was/video/text/clear`: remove text, hide
+- `/was/video/text/x` / `y` / `size`: normalized float 0..1
+- `/was/video/text/hue` / `sat` / `brightness` / `alpha`:
+  normalized float 0..1
+- `/was/video/text/font`: filename only, installed TTF/OTF in
+  /home/pi/FONT or /media/usb0/FONT
+- Default WAS text state: hidden, white DejaVu Sans at x=0.08,
+  top-down baseline y=0.14, `size=0.2`
+- Caption is clean **POST-FX** by existing renderer order. Button1
+  FX bypass does not disable the text.
+- Input text over 512 UTF-8 bytes is rejected rather than truncated.
+  No auto-expiration, animation or wrapping added.
+- `was_fxctl.py`: `title`, `title-show`, `title-clear`,
+  `title-x/y/size/hue/sat/brightness/alpha`, `title-font`.
+  No Mac Python package installation needed.
+
+Requires **one Pi C++ rebuild** after installing updated
+`src/ofApp.cpp`; previous working executable is untouched until
+`make -j1` succeeds. Nothing is auto-deployed or remotely launched.
+
+Example first test, after
+`cd /home/pi/recurBOY-was; git pull --ff-only;
+sh software/ofRecurBoy/installWASIntoImage.sh` and
+rebuilding in the installed app directory:
+
+```sh
+WAS_CAPTURE_ID=2 WAS_DIAGNOSTICS=1 WAS_ENCODER=1 \
+  WAS_FX_SHADER=invert.frag sh startWASHeadless
+```
+
+Then from the Mac with updated CLI `was_fxctl.py`:
+
+```sh
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 title "WAS TEST"
+python3 ~/Desktop/was_fxctl.py --host 192.168.0.109 title-clear
+```
+
+Confirm title appears on both inverted-video and FX bypass modes,
+and no change to capture/HDMI, GPIO, or OSC FX controls. Confirm
+`title-show 0` hides without deleting, `title-show 1` restores.
+The text renderer is originally rudimentary: test longer lines,
+multi-line strings, alpha, and alternate installed fonts later.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
