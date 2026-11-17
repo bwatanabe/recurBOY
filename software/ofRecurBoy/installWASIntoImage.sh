@@ -27,7 +27,7 @@ mkdir -p "$BACKUP_DIR/src"
 cp -p "$TARGET_DIR/src/ofApp.cpp" "$BACKUP_DIR/src/ofApp.cpp"
 cp -p "$TARGET_DIR/src/ofApp.h" "$BACKUP_DIR/src/ofApp.h"
 cp -p "$TARGET_DIR/src/main.cpp" "$BACKUP_DIR/src/main.cpp"
-for name in startWASHeadless was_diagnostics.py; do
+for name in startWASHeadless runWASVideoProcessor was_diagnostics.py was_fxctl.py; do
     if [ -f "$TARGET_DIR/$name" ]; then
         cp -p "$TARGET_DIR/$name" "$BACKUP_DIR/$name"
     fi
@@ -37,9 +37,11 @@ cp "$SCRIPT_DIR/src/ofApp.cpp" "$TARGET_DIR/src/ofApp.cpp"
 cp "$SCRIPT_DIR/src/ofApp.h" "$TARGET_DIR/src/ofApp.h"
 cp "$SCRIPT_DIR/src/main.cpp" "$TARGET_DIR/src/main.cpp"
 cp "$SCRIPT_DIR/startWASHeadless" "$TARGET_DIR/startWASHeadless"
+cp "$SCRIPT_DIR/runWASVideoProcessor" "$TARGET_DIR/runWASVideoProcessor"
+cp "$SCRIPT_DIR/was_fxctl.py" "$TARGET_DIR/was_fxctl.py"
 cp "$SCRIPT_DIR/was_diagnostics.py" "$TARGET_DIR/was_diagnostics.py"
 cp "$SCRIPT_DIR/was_probe.sh" "$TARGET_DIR/was_probe.sh"
-chmod +x "$TARGET_DIR/startWASHeadless" "$TARGET_DIR/was_probe.sh"
+chmod +x "$TARGET_DIR/startWASHeadless" "$TARGET_DIR/runWASVideoProcessor" "$TARGET_DIR/was_fxctl.py" "$TARGET_DIR/was_probe.sh"
 
 printf 'WAS sources installed to: %s\n' "$TARGET_DIR"
 printf 'Original C++ source backed up to: %s\n' "$BACKUP_DIR"
@@ -48,4 +50,5 @@ printf '  cd "%s"\n' "$TARGET_DIR"
 printf '  make -j1\n'
 printf '  python3 was_diagnostics.py --print-wiring\n'
 printf '  WAS_DIAGNOSTICS=1 WAS_CAPTURE_ID=2 WAS_FX_SHADER=invert.frag sh startWASHeadless\n'
+printf '  (later, without compiling) WAS_ENCODER=1 sh runWASVideoProcessor\n'
 printf '\nNOTE: use a powered USB hub for the MiraBox on the tested Pi Zero 2 W.\n'
