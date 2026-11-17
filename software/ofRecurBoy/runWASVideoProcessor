@@ -1,0 +1,49 @@
+#!/bin/sh
+# WAS global/output-stage recurBOY video processor.
+# Launch the already-built Pi executable directly; NO make, NO compiling.
+# Optional SSD1306/buttons/encoder controller runs as a child process.
+set -eu
+
+APP_DIR="${WAS_APP_DIR:-/home/pi/openframeworks10.1/apps/myApps/ofRecurBoy}"
+export WAS_HEADLESS=1
+export WAS_CAPTURE_ID="${WAS_CAPTURE_ID:-2}"
+export WAS_OSC_PORT="${WAS_OSC_PORT:-8000}"
+export WAS_FX_SHADER="${WAS_FX_SHADER:-invert.frag}"
+export WAS_DIAGNOSTICS="${WAS_DIAGNOSTICS:-1}"
+export WAS_ENCODER="${WAS_ENCODER:-0}"
+
+if [ ! -x "$APP_DIR/bin/ofRecurBoy" ]; then
+    echo "ERROR: No built recurBOY executable: $APP_DIR/bin/ofRecurBoy" >&2
+    exit 1
+fi
+
+diagnostics_pid=""
+engine_pid=""
+
+cleanup() {
+    trap - EXIT INT TERM
+    # End renderer before turning off the OLED. No 'make run' child remains.
+    if [ -n "$engine_pid" ]; then
+        kill "$engine_pid" 2>/dev/null || true
+        wait "$engine_pid" 2>/dev/null || true
+    fi
+    if [ -n "$diagnostics_pid" ]; then
+        kill "$diagnostics_pid" 2>/dev/null || true
+        wait "$diagnostics_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [ "$WAS_DIAGNOSTICS" = "1" ]; then
+    python3 "$APP_DIR/was_diagnostics.py" --control-port "$WAS_OSC_PORT" &
+    diagnostics_pid=$!
+fi
+
+# The executable expects its data (settings.json, shaders, etc.) relative
+# to bin/; this matches openFrameworks' 'make run' working directory.
+cd "$APP_DIR/bin"
+./ofRecurBoy &
+engine_pid=$!
+wait "$engine_pid"
