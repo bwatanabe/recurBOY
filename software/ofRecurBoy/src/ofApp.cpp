@@ -1,5 +1,6 @@
 #include "ofApp.h"
 #include <cstdlib>
+#include <cmath>
 
 //--------------------------------------------------------------
 void ofApp::setup(){
@@ -87,7 +88,22 @@ void ofApp::setup(){
 
     thisTextObject = textObject();
     thisTextObject.loadFont("arial.tff");
-    
+    if(wasHeadless){
+        // Classic video-mixer character generator: one clean overlay,
+        // composited over the processed video in draw(), not through FX.
+        // Visible only after a WAS text/set or explicit enabled command.
+        thisTextObject.text = "";
+        textPage.isPlaying = false;
+        thisTextObject.x = 0.08f;
+        thisTextObject.y = 0.86f;  // legacy Y is measured bottom-up (baseline).
+        thisTextObject.width = 0.2f;
+        thisTextObject.height = 0.2f;
+        thisTextObject.hue = 0.0f;
+        thisTextObject.sat = 0.0f;
+        thisTextObject.brightness = 1.0f;
+        thisTextObject.alpha = 1.0f;
+    }
+
 
     runningSource = sourceModes[0];
     currentPage = runningSource;
@@ -389,9 +405,82 @@ void ofApp::readWasOsc(){
             nextWasEffect();
             continue;
         }
+        // These no-argument commands must be handled before the general
+        // OSC argument check. Clear hides text *and* removes its contents.
+        if(address == "/was/video/text/clear"){
+            thisTextObject.text.clear();
+            textPage.isPlaying = false;
+            continue;
+        }
         if(msg.getNumArgs() < 1) continue;
         try{
-            if(address == "/was/video/fx/load"){
+            if(address == "/was/video/text/set"){
+                const string value = msg.getArgAsString(0);
+                // Keep network text and on-screen layout bounded. Reject,
+                // don't byte-truncate, to avoid splitting a UTF-8 character.
+                if(value.size() <= 512){
+                    thisTextObject.text = value;
+                    textPage.isPlaying = !value.empty();
+                }
+                else{
+                    ofLogWarning() << "WAS text overlay exceeds 512 bytes; ignored";
+                }
+            }
+            else if(address == "/was/video/text/enabled"){
+                textPage.isPlaying = (msg.getArgAsInt32(0) != 0);
+            }
+            else if(address == "/was/video/text/x"){
+                setTextDisplaceX(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/y"){
+                // OSC coordinates are intuitive top-down 0..1.
+                // The legacy text object stores Y bottom-up.
+                const float y = msg.getArgAsFloat(0);
+                if(std::isfinite(y)) setTextDisplaceY(1.0f - y);
+            }
+            else if(address == "/was/video/text/size"){
+                const float size = msg.getArgAsFloat(0);
+                if(std::isfinite(size)){
+                    setTextDisplaceWidth(size);
+                    setTextDisplaceHeight(size);
+                }
+            }
+            else if(address == "/was/video/text/hue"){
+                setTextColorHue(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/sat"){
+                setTextColorSat(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/brightness"){
+                setTextColorBrightness(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/alpha"){
+                setTextColorAlpha(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/font"){
+                // Name-only, installed fonts: never accept arbitrary paths
+                // from an OSC command. Keep the previous font if missing.
+                const string name = msg.getArgAsString(0);
+                const string ext = ofToLower(ofFilePath::getFileExt(name));
+                if(name == ofFilePath::getFileName(name) &&
+                   (ext == "ttf" || ext == "otf") &&
+                   name.find("..") == string::npos){
+                    const vector<string> roots = {"/home/pi/FONT/", "/media/usb0/FONT/"};
+                    bool found = false;
+                    for(const auto& root : roots){
+                        const string filename = root + name;
+                        if(ofFile(filename).exists()){
+                            thisTextObject.loadFont(filename);
+                            found = true;
+                            ofLogNotice() << "WAS text font: " << filename;
+                            break;
+                        }
+                    }
+                    if(!found) ofLogWarning() << "WAS text font not installed: " << name;
+                }
+                else ofLogWarning() << "WAS text font must be an installed .ttf or .otf basename";
+            }
+            else if(address == "/was/video/fx/load"){
                 loadWasEffect(msg.getArgAsString(0));
             }
             else if(address == "/was/video/fx/enabled"){
