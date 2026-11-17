@@ -969,6 +969,48 @@ exhibition until tested. No service/autostart changes have been
 applied. A systemd service and a WAS-owned supervisor remain later
 work; don't switch on autostart until the above build/test passes.
 
+## Output-stage processor next milestone (2026-11-16) — scripts committed, not yet tested
+
+User's current working v0.2: live HDMI video on Pi Zero 2 W with
+powered hub, invert FX on/off via Button1, encoder rotational control
+(once `WAS_ENCODER=1`), and OSC FX selection confirmed. Button2
+remains physically suspect: GPIO27 stays HIGH even when pressed.
+No further software changes should be made to fix Button2 before
+inspecting/reworking the cable/switch. Hulu/movie content filled the
+HDMI monitor; don't alter drawing aspect ratio.
+
+**Next objective:** recurBOY is a continuously running,
+cartridge-independent **global video output processor**; control
+may originate in WAS/maestro/actors or on the Pi.
+
+New *unverified* files:
+- `software/ofRecurBoy/runWASVideoProcessor`: starts built
+  `bin/ofRecurBoy` directly (NO compilation) and manages the
+  optional OLED daemon and shutdown via signals
+- `software/ofRecurBoy/was_fxctl.py`: standard-library-only OSC
+  remote controller for Mac, WAS host, or Pi
+- `software/ofRecurBoy/was-video-processor.service`: optional
+  systemd service, restart-on-exit. **Not installed or enabled**
+- `installWASIntoImage.sh`: now copies new launcher and OSC tool
+  without changing Pi system services
+
+**Next user test:** After stopping currently running WAS app,
+`cd /home/pi/recurBOY-was && git pull --ff-only &&
+sh software/ofRecurBoy/installWASIntoImage.sh`; then run
+`WAS_ENCODER=1 sh runWASVideoProcessor` from the installed
+application directory. Existing v0.2 C++ build can be used without
+recompilation if sources remain unchanged. Confirm full-screen video,
+OLED and encoder. From the Mac send
+`python3 was_fxctl.py --host 192.168.0.109 next` or `enable 0`
+to prove external OSC network control. Only after manual checks,
+**stop manual process** and trial the opt-in systemd unit; do not
+enable at boot without testing.
+
+Future stability testing: 20–30-minute continuous HDMI video,
+encoder tweaks, FX transitions, `dmesg` USB errors, and a watchdog
+based on *actual incoming video frame events*. Existing OLED
+`UVC:LINK` means device readiness only, not fresh frames.
+
 ## 7. Launch WAS video FX mode (only after C++ builds)
 
 With a compatible HDMI-to-USB UVC capture dongle connected to the Pi's
