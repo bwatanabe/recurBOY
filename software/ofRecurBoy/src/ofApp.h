@@ -15,6 +15,17 @@ class ofApp : public ofBaseApp{
 		void draw();
 
     ofxOscSender sender;
+    // WAS opt-in headless mode: external UVC source and network-controlled FX.
+    bool wasHeadless = false;
+    ofxOscReceiver wasOsc;
+    void readWasOsc();
+    bool loadWasEffect(const string& requestedName);
+    void nextWasEffect();
+    void sendWasDiagnostics();
+    ofxOscSender wasDiagnosticsSender;
+    bool wasDiagnosticsEnabled = false;
+    string wasEffectName = "none";
+    float wasLastDiagnosticTime = 0.0f;
     void sendMenuList(string address, vector<string> list);
     void sendIntMessage(string address, int value);
     void sendStringMessage(string address, string value);

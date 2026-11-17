@@ -1,4 +1,6 @@
 #include "ofApp.h"
+#include <cstdlib>
+#include <cmath>
 
 //--------------------------------------------------------------
 void ofApp::setup(){
@@ -7,6 +9,8 @@ void ofApp::setup(){
     ofSetVerticalSync(false);
     ofHideCursor();
     setting.loadJson();
+    const char* wasMode = std::getenv("WAS_HEADLESS");
+    wasHeadless = wasMode && string(wasMode) == "1";
     ofSetFrameRate(setting.framerate);
     readVideoMode();
 
@@ -25,11 +29,29 @@ void ofApp::setup(){
     
 
     userInput.setupThis("actionMap.json");
-    userInput.analogListening();
-    userInput.midiListening(true);
-    userInput.adcDelay = setting.adcSecDelay;
-    userInput.adcGrain = setting.adcGrain;
-    userInput.connectKeyboard(0);
+    if(wasHeadless){
+        // No MCP3008/ADC or shield is attached. Incur defaults to analog
+        // listening on Raspberry Pi, so explicitly disable it.
+        userInput.isAnalogListening = false;
+        const char* oscPortEnv = std::getenv("WAS_OSC_PORT");
+        int oscPort = oscPortEnv ? std::atoi(oscPortEnv) : 8000;
+        if(oscPort <= 0 || oscPort > 65535) oscPort = 8000;
+        wasOsc.setup(oscPort);
+        ofLogNotice() << "WAS headless mode: OSC listening on UDP " << oscPort;
+        const char* diagEnv = std::getenv("WAS_DIAGNOSTICS");
+        wasDiagnosticsEnabled = diagEnv && string(diagEnv) == "1";
+        if(wasDiagnosticsEnabled){
+            wasDiagnosticsSender.setup("127.0.0.1", 9010);
+            ofLogNotice() << "WAS diagnostics: status on 127.0.0.1:9010";
+        }
+    }
+    else{
+        userInput.analogListening();
+        userInput.midiListening(true);
+        userInput.adcDelay = setting.adcSecDelay;
+        userInput.adcGrain = setting.adcGrain;
+        userInput.connectKeyboard(0);
+    }
 
     sender.setup("localhost", 9000);
 
@@ -65,8 +87,28 @@ void ofApp::setup(){
     isCameraRecording = false;
 
     thisTextObject = textObject();
-    thisTextObject.loadFont("arial.tff");
-    
+    if(wasHeadless){
+        // Use the system font confirmed to exist on the tested Pi image.
+        // The stock spelling "arial.tff" relies on openFrameworks fallback.
+        thisTextObject.loadFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        // Classic video-mixer character generator: one clean overlay,
+        // composited over the processed video in draw(), not through FX.
+        // Visible only after a WAS text/set or explicit enabled command.
+        thisTextObject.text = "";
+        textPage.isPlaying = false;
+        thisTextObject.x = 0.08f;
+        thisTextObject.y = 0.86f;  // legacy Y is measured bottom-up (baseline).
+        thisTextObject.width = 0.2f;
+        thisTextObject.height = 0.2f;
+        thisTextObject.hue = 0.0f;
+        thisTextObject.sat = 0.0f;
+        thisTextObject.brightness = 1.0f;
+        thisTextObject.alpha = 1.0f;
+    }
+    else{
+        // Preserve the original recurBOY behavior outside WAS mode.
+        thisTextObject.loadFont("arial.tff");
+    }
 
     runningSource = sourceModes[0];
     currentPage = runningSource;
@@ -78,6 +120,39 @@ void ofApp::setup(){
     shaderPlayer.setup();
     fxPlayer.setup();
 
+    if(wasHeadless){
+        // Automatically run external USB capture; do not require menu input.
+        // The capture class currently requests 640x480 internally.
+        const char* captureIdEnv = std::getenv("WAS_CAPTURE_ID");
+        int captureId = captureIdEnv ? std::atoi(captureIdEnv) : 2;
+        if(captureId < 0) captureId = 2;
+        runningSource = "EXTERNAL";
+        currentPage = "EXTERNAL";
+        externalPage.isPlaying = true;
+        videoInput.setup("vidGrabber", ofGetWidth(), ofGetHeight(), 25, captureId);
+        ofLogNotice() << "WAS headless capture started with device index " << captureId;
+
+        const char* fxEnv = std::getenv("WAS_FX_SHADER");
+        if(fxEnv && fxEnv[0] != '\0'){
+            if(!loadWasEffect(fxEnv)){
+                ofLogWarning() << "WAS shader not found: " << fxEnv << " (raw input still shown)";
+            }
+        }
+        else{
+            // Reuse the first top-level effect on the installed recurBOY image.
+            // Do not mutate effectPage.menuList while iterating over it.
+            string firstEffect;
+            for(const auto& item : effectPage.menuList){
+                if(!item.empty() && item.back() != '|'){
+                    firstEffect = ofFilePath::getFileName(item);
+                    break;
+                }
+            }
+            if(!firstEffect.empty()) loadWasEffect(firstEffect);
+            else ofLogWarning() << "WAS: no top-level FX shader found; showing unprocessed capture";
+        }
+    }
+
     safeShutdownCount = 0;
     safeShutdownLastTime = ofGetElapsedTimef();   
 
@@ -85,7 +160,8 @@ void ofApp::setup(){
 
 //--------------------------------------------------------------
 void ofApp::update(){
-    readActions();
+    if(wasHeadless) readWasOsc();
+    else readActions();
 
     if(runningSource == "VIDEO" && videoPage.isPlaying && !isSampleImage){
         recurPlayer.update();
@@ -109,6 +185,14 @@ void ofApp::update(){
     }
     if(effectPage.isPlaying){
     fxFbo = fxPlayer.apply({fbo.getTexture(), fxFbo.getTexture()});
+    }
+
+    if(wasHeadless && wasDiagnosticsEnabled){
+        const float now = ofGetElapsedTimef();
+        if(now - wasLastDiagnosticTime >= 0.5f){
+            sendWasDiagnostics();
+            wasLastDiagnosticTime = now;
+        }
     }
 
    // if(isCameraRecording){ checkRecording();}
@@ -251,6 +335,172 @@ void ofApp::runAction(string action, string amount){
 
 
  }
+
+// WAS OSC commands are separate from the original incur input mapper so that
+// hardware-free operation never polls GPIO or the absent MCP3008 chip.
+void ofApp::nextWasEffect(){
+    // Cycle only installed top-level shader files; avoid folder menu items.
+    const vector<string> menu = getPathsForMenu(effectPage);
+    vector<string> names;
+    for(const auto& item : menu){
+        if(!item.empty() && item.back() != '|')
+            names.push_back(ofFilePath::getFileName(item));
+    }
+    if(names.empty()) return;
+
+    int nextIndex = 0;
+    for(size_t i = 0; i < names.size(); ++i){
+        if(ofFilePath::getBaseName(names[i]) == wasEffectName){
+            nextIndex = (static_cast<int>(i) + 1) % static_cast<int>(names.size());
+            break;
+        }
+    }
+    loadWasEffect(names[nextIndex]);
+}
+
+void ofApp::sendWasDiagnostics(){
+    ofxOscMessage message;
+    message.setAddress("/was/video/status");
+    message.addStringArg(wasEffectName);
+    message.addIntArg(effectPage.isPlaying ? 1 : 0);
+    message.addIntArg(videoInput.isReady() ? 1 : 0);
+    // This is *renderer* FPS. UVC readiness is connection status rather
+    // than proof that individual frames are arriving.
+    message.addFloatArg(ofGetFrameRate());
+    for(int i = 0; i < 3; ++i){
+        message.addFloatArg(fxPlayer.shaderParams[i]);
+    }
+    wasDiagnosticsSender.sendMessage(message, false);
+}
+
+bool ofApp::loadWasEffect(const string& requestedName){
+    effectPage.menuList = getPathsForMenu(effectPage);
+    for(const auto& item : effectPage.menuList){
+        if(item.empty() || item.back() == '|') continue;
+        if(ofFilePath::getFileName(item) == requestedName ||
+           ofFilePath::getBaseName(item) == requestedName){
+            fxPlayer.loadShaderFiles("default.vert", item);
+            wasEffectName = ofFilePath::getBaseName(item);
+            if(wasHeadless){
+                // Many recurBOY shaders expect nonzero knob values.
+                // This particular invert.frag uses abs(mix(.05,1,p)-pixel);
+                // value 1.0 on all three channels yields a true negative.
+                // Other shaders start halfway through their range rather
+                // than at an often-neutral or divide-by-zero value.
+                const float startingValue = wasEffectName == "invert" ? 1.0f : 0.5f;
+                for(int i = 0; i < 3; ++i){
+                    fxPlayer.shaderParams[i] = startingValue;
+                }
+            }
+            effectPage.isPlaying = true;
+            ofLogNotice() << "WAS loaded effect " << item;
+            return true;
+        }
+    }
+    ofLogWarning() << "WAS effect not found in top-level EFFECT/Fx folders: " << requestedName;
+    return false;
+}
+
+void ofApp::readWasOsc(){
+    while(wasOsc.hasWaitingMessages()){
+        ofxOscMessage msg;
+        wasOsc.getNextMessage(msg);
+        const string address = msg.getAddress();
+        if(address == "/was/video/fx/next"){
+            nextWasEffect();
+            continue;
+        }
+        // These no-argument commands must be handled before the general
+        // OSC argument check. Clear hides text *and* removes its contents.
+        if(address == "/was/video/text/clear"){
+            thisTextObject.text.clear();
+            textPage.isPlaying = false;
+            continue;
+        }
+        if(msg.getNumArgs() < 1) continue;
+        try{
+            if(address == "/was/video/text/set"){
+                const string value = msg.getArgAsString(0);
+                // Keep network text and on-screen layout bounded. Reject,
+                // don't byte-truncate, to avoid splitting a UTF-8 character.
+                if(value.size() <= 512){
+                    thisTextObject.text = value;
+                    textPage.isPlaying = !value.empty();
+                }
+                else{
+                    ofLogWarning() << "WAS text overlay exceeds 512 bytes; ignored";
+                }
+            }
+            else if(address == "/was/video/text/enabled"){
+                textPage.isPlaying = (msg.getArgAsInt32(0) != 0);
+            }
+            else if(address == "/was/video/text/x"){
+                setTextDisplaceX(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/y"){
+                // OSC coordinates are intuitive top-down 0..1.
+                // The legacy text object stores Y bottom-up.
+                const float y = msg.getArgAsFloat(0);
+                if(std::isfinite(y)) setTextDisplaceY(1.0f - y);
+            }
+            else if(address == "/was/video/text/size"){
+                const float size = msg.getArgAsFloat(0);
+                if(std::isfinite(size)){
+                    setTextDisplaceWidth(size);
+                    setTextDisplaceHeight(size);
+                }
+            }
+            else if(address == "/was/video/text/hue"){
+                setTextColorHue(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/sat"){
+                setTextColorSat(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/brightness"){
+                setTextColorBrightness(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/alpha"){
+                setTextColorAlpha(msg.getArgAsFloat(0));
+            }
+            else if(address == "/was/video/text/font"){
+                // Name-only, installed fonts: never accept arbitrary paths
+                // from an OSC command. Keep the previous font if missing.
+                const string name = msg.getArgAsString(0);
+                const string ext = ofToLower(ofFilePath::getFileExt(name));
+                if(name == ofFilePath::getFileName(name) &&
+                   (ext == "ttf" || ext == "otf") &&
+                   name.find("..") == string::npos){
+                    const vector<string> roots = {"/home/pi/FONT/", "/media/usb0/FONT/"};
+                    bool found = false;
+                    for(const auto& root : roots){
+                        const string filename = root + name;
+                        if(ofFile(filename).exists()){
+                            thisTextObject.loadFont(filename);
+                            found = true;
+                            ofLogNotice() << "WAS text font: " << filename;
+                            break;
+                        }
+                    }
+                    if(!found) ofLogWarning() << "WAS text font not installed: " << name;
+                }
+                else ofLogWarning() << "WAS text font must be an installed .ttf or .otf basename";
+            }
+            else if(address == "/was/video/fx/load"){
+                loadWasEffect(msg.getArgAsString(0));
+            }
+            else if(address == "/was/video/fx/enabled"){
+                effectPage.isPlaying = (msg.getArgAsInt32(0) != 0);
+            }
+            else if(address == "/was/video/fx/param/0") setEffectParam0(msg.getArgAsFloat(0));
+            else if(address == "/was/video/fx/param/1") setEffectParam1(msg.getArgAsFloat(0));
+            else if(address == "/was/video/fx/param/2") setEffectParam2(msg.getArgAsFloat(0));
+            else if(address == "/was/video/fx/speed") setEffectSpeed(msg.getArgAsFloat(0));
+        }
+        catch(const std::exception& error){
+            ofLogWarning() << "WAS bad OSC argument for " << address << ": " << error.what();
+        }
+    }
+}
 
 void ofApp::exit(){
     userInput.exit();

@@ -1,0 +1,33 @@
+name: WAS static checks
+
+on:
+  push:
+    branches:
+      - 'was/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'software/ofRecurBoy/was_diagnostics.py'
+      - 'software/ofRecurBoy/startWASHeadless'
+      - 'software/ofRecurBoy/installWASIntoImage.sh'
+      - 'software/ofRecurBoy/was_probe.sh'
+      - '.github/workflows/was-static-checks.yml'
+
+jobs:
+  headless-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile-check optional Python diagnostic controller
+        run: python3 -m py_compile software/ofRecurBoy/was_diagnostics.py
+      - name: Validate launch script syntax
+        run: sh -n software/ofRecurBoy/startWASHeadless
+      - name: Check install/probe shell syntax
+        run: |
+          sh -n software/ofRecurBoy/installWASIntoImage.sh
+          sh -n software/ofRecurBoy/was_probe.sh
+      - name: Run the read-only image probe in CI
+        run: sh software/ofRecurBoy/was_probe.sh
+      - name: Verify the wiring report works without Pi-only dependencies
+        run: python3 software/ofRecurBoy/was_diagnostics.py --print-wiring

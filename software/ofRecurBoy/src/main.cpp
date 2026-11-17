@@ -1,9 +1,20 @@
 #include "ofMain.h"
 #include "ofApp.h"
+#include <cstdlib>
+#include <string>
 
 //========================================================================
 int main( ){
-    ofSetLogLevel(OF_LOG_VERBOSE);
+    // Keep stock recurBOY logging unchanged. WAS uses notice-level logging
+    // so repetitive GStreamer "unhandled message" verbose lines are hidden,
+    // while warnings and errors remain visible.
+    const char* wasMode = std::getenv("WAS_HEADLESS");
+    if(wasMode && std::string(wasMode) == "1"){
+        ofSetLogLevel(OF_LOG_NOTICE);
+    }
+    else{
+        ofSetLogLevel(OF_LOG_VERBOSE);
+    }
 	//ofSetupOpenGL(1024,768, OF_WINDOW);			// <-------- setup the GL context
     //ofSetupOpenGL(1024,768, OF_WINDOW);
 	ofGLESWindowSettings settings;
